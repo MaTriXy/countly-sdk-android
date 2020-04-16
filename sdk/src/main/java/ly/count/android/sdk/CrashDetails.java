@@ -43,9 +43,8 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.io.UnsupportedEncodingException;
-import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -56,16 +55,18 @@ import java.util.regex.Pattern;
  *
  */
 class CrashDetails {
-    private static ArrayList<String> logs = new ArrayList<String>();
-    private static int startTime = Countly.currentTimestamp();
-    private static Map<String,String> customSegments = null;
+    private static final int maxBreadcrumbLimit = 1000;//the limit of how many breadcrumbs can be saved
+    private static final int maxBreadcrumbSize = 1000;//maximum allowed length of a breadcrumb in characters
+    private static final LinkedList<String> logs = new LinkedList<>();
+    private static final int startTime = UtilsTime.currentTimestampSeconds();
+    static Map<String,Object> customSegments = null;
     private static boolean inBackground = true;
     private static long totalMemory = 0;
 
     private static long getTotalRAM() {
         if(totalMemory == 0) {
             RandomAccessFile reader = null;
-            String load = null;
+            String load;
             try {
                 reader = new RandomAccessFile("/proc/meminfo", "r");
                 load = reader.readLine();
@@ -130,7 +131,22 @@ class CrashDetails {
      * Adds a record in the log
      */
     static void addLog(String record) {
+        int recordLength = record.length();
+        if(recordLength > maxBreadcrumbSize){
+            if(Countly.sharedInstance().isLoggingEnabled()){
+                Log.d(Countly.TAG, "Breadcrumb exceeds character limit: [" + recordLength + "], reducing it to: [" + maxBreadcrumbSize + "]");
+            }
+            record = record.substring(0, Math.min(maxBreadcrumbSize, recordLength));
+        }
+
         logs.add(record);
+
+        if(logs.size() > maxBreadcrumbLimit){
+            if(Countly.sharedInstance().isLoggingEnabled()){
+                Log.d(Countly.TAG, "Breadcrumb amount limit exceeded, deleting the oldest one");
+            }
+            logs.removeFirst();
+        }
     }
 
     /**
@@ -141,7 +157,7 @@ class CrashDetails {
 
         for (String s : logs)
         {
-            allLogs.append(s + "\n");
+            allLogs.append(s).append("\n");
         }
         logs.clear();
         return allLogs.toString();
@@ -151,25 +167,45 @@ class CrashDetails {
      * Adds developer provided custom segments for crash,
      * like versions of dependency libraries.
      */
-    static void setCustomSegments(Map<String,String> segments) {
-        customSegments = new HashMap<String, String>();
+    static void setCustomSegments(Map<String,Object> segments) {
+        customSegments = new HashMap<>();
+
+        for (Map.Entry<String, Object> pair : segments.entrySet()) {
+            String key = pair.getKey();
+            Object value = pair.getValue();
+
+            if (value instanceof Integer) {
+                customSegments.put(key, (Integer) value);
+            } else if (value instanceof Double) {
+                customSegments.put(key, (Double) value);
+            } else if (value instanceof String) {
+                customSegments.put(key, (String) value);
+            } else if (value instanceof Boolean) {
+                customSegments.put(key, (Boolean) value);
+            } else {
+                if(Countly.sharedInstance().isLoggingEnabled()){
+                    Log.w(Countly.TAG, "Unsupported data type added as custom crash segment");
+                }
+            }
+        }
+
         customSegments.putAll(segments);
     }
 
     /**
      * Get custom segments json string
      */
-    static JSONObject getCustomSegments() {
+    static JSONObject getCustomSegmentsJson() {
         if(customSegments != null && !customSegments.isEmpty())
             return new JSONObject(customSegments);
         else
             return null;
     }
 
-
     /**
      * Returns the current device manufacturer.
      */
+    @SuppressWarnings("SameReturnValue")
     static String getManufacturer() {
         return android.os.Build.MANUFACTURER;
     }
@@ -219,7 +255,7 @@ class CrashDetails {
     /**
      * Returns the total device RAM amount.
      */
-    static String getRamTotal(Context context) {
+    static String getRamTotal() {
         return Long.toString(getTotalRAM());
     }
 
@@ -277,7 +313,7 @@ class CrashDetails {
         }
         catch(Exception e){
             if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.i(Countly.TAG, "Can't get batter level");
+                Log.i(Countly.TAG, "Can't get battery level");
             }
         }
 
@@ -288,7 +324,7 @@ class CrashDetails {
      * Get app's running time before crashing.
      */
     static String getRunningTime() {
-        return Integer.toString(Countly.currentTimestamp() - startTime);
+        return Integer.toString(UtilsTime.currentTimestampSeconds() - startTime);
     }
 
     /**
@@ -349,14 +385,18 @@ class CrashDetails {
      * Checks if device is muted.
      */
     static String isMuted(Context context) {
-        AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        switch( audio.getRingerMode() ){
-            case AudioManager.RINGER_MODE_SILENT:
-                return "true";
-            case AudioManager.RINGER_MODE_VIBRATE:
-                return "true";
-            default:
-                return "false";
+        try {
+            AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+            switch (audio.getRingerMode()){
+                case AudioManager.RINGER_MODE_SILENT:
+                    // Fall-through
+                case AudioManager.RINGER_MODE_VIBRATE:
+                    return "true";
+                default:
+                    return "false";
+            }
+        } catch (Throwable thr) {
+            return "false";
         }
     }
 
@@ -365,13 +405,12 @@ class CrashDetails {
      * See the following link for more info:
      * http://resources.count.ly/v1.0/docs/i
      */
-    static String getCrashData(final Context context, String error, Boolean nonfatal) {
+    static String getCrashData(final Context context, String error, Boolean nonfatal, boolean isNativeCrash) {
         final JSONObject json = new JSONObject();
 
         fillJSONIfValuesNotEmpty(json,
                 "_error", error,
                 "_nonfatal", Boolean.toString(nonfatal),
-                "_logs", getLogs(),
                 "_device", DeviceInfo.getDevice(),
                 "_os", DeviceInfo.getOS(),
                 "_os_version", DeviceInfo.getOSVersion(),
@@ -380,33 +419,37 @@ class CrashDetails {
                 "_manufacture", getManufacturer(),
                 "_cpu", getCpu(),
                 "_opengl", getOpenGL(context),
-                "_ram_current", getRamCurrent(context),
-                "_ram_total", getRamTotal(context),
-                "_disk_current", getDiskCurrent(),
-                "_disk_total", getDiskTotal(),
-                "_bat", getBatteryLevel(context),
-                "_run", getRunningTime(),
-                "_orientation", getOrientation(context),
                 "_root", isRooted(),
-                "_online", isOnline(context),
-                "_muted", isMuted(context),
-                "_background", isInBackground()
+                "_ram_total", getRamTotal(),
+                "_disk_total", getDiskTotal()
                 );
 
+        if(!isNativeCrash){
+            //if is not a native crash
+            fillJSONIfValuesNotEmpty(json,
+                    "_logs", getLogs(),
+                    "_ram_current", getRamCurrent(context),
+                    "_disk_current", getDiskCurrent(),
+                    "_bat", getBatteryLevel(context),
+                    "_run", getRunningTime(),
+                    "_orientation", getOrientation(context),
+                    "_online", isOnline(context),
+                    "_muted", isMuted(context),
+                    "_background", isInBackground()
+            );
+        } else {
+            //if is a native crash
+            try {
+                json.put("_native_cpp", true);
+            } catch (JSONException ignored) { }
+        }
+
         try {
-            json.put("_custom", getCustomSegments());
+            json.put("_custom", getCustomSegmentsJson());
         } catch (JSONException e) {
             //no custom segments
         }
-        String result = json.toString();
-
-        try {
-            result = java.net.URLEncoder.encode(result, "UTF-8");
-        } catch (UnsupportedEncodingException ignored) {
-            // should never happen because Android guarantees UTF-8 support
-        }
-
-        return result;
+        return json.toString();
     }
 
     /**

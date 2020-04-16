@@ -1,6 +1,7 @@
 package ly.count.android.demo;
 
 import android.app.Activity;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.view.View;
 
@@ -8,12 +9,11 @@ import java.util.HashMap;
 
 import ly.count.android.sdk.Countly;
 
+@SuppressWarnings("UnusedParameters")
 public class ActivityExampleUserDetails extends Activity {
-    Activity activity;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        activity = this;
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_example_user_details);
         Countly.onCreate(this);
@@ -26,20 +26,22 @@ public class ActivityExampleUserDetails extends Activity {
 
     public void onClickUserData02(View v) {
         //providing any custom key values to store with user
-        HashMap<String, String> custom = new HashMap<String, String>();
+        HashMap<String, String> custom = new HashMap<>();
         custom.put("favoriteAnimal", "dog");
 
         //set multiple custom properties
         Countly.userData.setCustomUserData(custom);
+        Countly.userData.save();
     }
 
     public void onClickUserData03(View v) {
         //providing any custom key values to store with user
-        HashMap<String, String> custom = new HashMap<String, String>();
+        HashMap<String, String> custom = new HashMap<>();
         custom.put("leastFavoritePet", "cat");
 
         //set multiple custom properties
         Countly.userData.setCustomUserData(custom);
+        Countly.userData.save();
     }
 
     public void onClickUserData04(View v) {
@@ -51,8 +53,8 @@ public class ActivityExampleUserDetails extends Activity {
     }
 
     public void setUserData(){
-        HashMap<String, String> data = new HashMap<String, String>();
-        data.put("name", "Firstname Lastname");
+        HashMap<String, String> data = new HashMap<>();
+        data.put("name", "First name Last name");
         data.put("username", "nickname");
         data.put("email", "test@test.com");
         data.put("organization", "Tester");
@@ -65,7 +67,7 @@ public class ActivityExampleUserDetails extends Activity {
         data.put("byear", "1987");
 
         //providing any custom key values to store with user
-        HashMap<String, String> custom = new HashMap<String, String>();
+        HashMap<String, String> custom = new HashMap<>();
         custom.put("country", "Turkey");
         custom.put("city", "Istanbul");
         custom.put("address", "My house 11");
@@ -100,6 +102,12 @@ public class ActivityExampleUserDetails extends Activity {
     {
         Countly.sharedInstance().onStop();
         super.onStop();
+    }
+
+    @Override
+    public void onConfigurationChanged (Configuration newConfig){
+        super.onConfigurationChanged(newConfig);
+        Countly.sharedInstance().onConfigurationChanged(newConfig);
     }
 }
 

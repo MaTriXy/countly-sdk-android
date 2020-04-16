@@ -21,8 +21,9 @@ THE SOFTWARE.
 */
 package ly.count.android.sdk;
 
-import android.test.AndroidTestCase;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
+import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 
 import java.io.UnsupportedEncodingException;
@@ -32,56 +33,87 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.mockito.Matchers.eq;
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
-public class EventQueueTests extends AndroidTestCase {
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+@RunWith(AndroidJUnit4.class)
+public class EventQueueTests {
     EventQueue mEventQueue;
     CountlyStore mMockCountlyStore;
 
-    @Override
-    protected void setUp() throws Exception {
-        super.setUp();
-
+    @Before
+    public void setUp() {
+        Countly.sharedInstance().setLoggingEnabled(true);
         mMockCountlyStore = mock(CountlyStore.class);
         mEventQueue = new EventQueue(mMockCountlyStore);
     }
 
+    @Test
     public void testConstructor() {
         assertSame(mMockCountlyStore, mEventQueue.getCountlyStore());
     }
 
+    @Test
     public void testRecordEvent() {
         final String eventKey = "eventKey";
         final int count = 42;
         final double sum = 3.0d;
         final double dur = 10.0d;
-        final Map<String, String> segmentation = new HashMap<String, String>(1);
-        final long timestamp = Countly.currentTimestampMs();
-        final int hour = Countly.currentHour();
-        final int dow = Countly.currentDayOfWeek();
+        final Map<String, String> segmentation = new HashMap<>(1);
+        final Map<String, Integer> segmentationInt = new HashMap<>(2);
+        final Map<String, Double> segmentationDouble = new HashMap<>(3);
+        final Map<String, Boolean> segmentationBoolean = new HashMap<>(4);
+        UtilsTime.Instant instant = UtilsTime.getCurrentInstant();
+        final long timestamp = instant.timestampMs;
+        final int hour = instant.hour;
+        final int dow = instant.dow;
         final ArgumentCaptor<Long> arg = ArgumentCaptor.forClass(Long.class);
 
-        mEventQueue.recordEvent(eventKey, segmentation, count, sum, dur);
-        verify(mMockCountlyStore).addEvent(eq(eventKey), eq(segmentation), arg.capture(), eq(hour), eq(dow), eq(count), eq(sum), eq(dur));
+        mEventQueue.recordEvent(eventKey, segmentation, segmentationInt, segmentationDouble, segmentationBoolean, count, sum, dur, null);
+        verify(mMockCountlyStore).addEvent(eq(eventKey), eq(segmentation), eq(segmentationInt), eq(segmentationDouble), eq(segmentationBoolean), arg.capture(), eq(hour), eq(dow), eq(count), eq(sum), eq(dur));
         assertTrue(((timestamp - 1) <= arg.getValue()) && ((timestamp + 1) >= arg.getValue()));
     }
 
+    @Test
+    public void testRecordPastEvent() {
+        final String eventKey = "eventKey";
+        final int count = 42;
+        final double sum = 3.0d;
+        final double dur = 10.0d;
+        final Map<String, String> segmentation = new HashMap<>(1);
+        final Map<String, Integer> segmentationInt = new HashMap<>(2);
+        final Map<String, Double> segmentationDouble = new HashMap<>(3);
+        final Map<String, Boolean> segmentationBoolean = new HashMap<>(4);
+        UtilsTime.Instant instant = UtilsTime.Instant.get(123456789);
+        final long timestamp = instant.timestampMs;
+        final int hour = instant.hour;
+        final int dow = instant.dow;
+        final ArgumentCaptor<Long> arg = ArgumentCaptor.forClass(Long.class);
+
+        mEventQueue.recordEvent(eventKey, segmentation, segmentationInt, segmentationDouble, segmentationBoolean, count, sum, dur, instant);
+        verify(mMockCountlyStore).addEvent(eq(eventKey), eq(segmentation), eq(segmentationInt), eq(segmentationDouble), eq(segmentationBoolean), arg.capture(), eq(hour), eq(dow), eq(count), eq(sum), eq(dur));
+        assertTrue(((timestamp - 1) <= arg.getValue()) && ((timestamp + 1) >= arg.getValue()));
+    }
+
+    @Test
     public void testSize_zeroLenArray() {
         when(mMockCountlyStore.events()).thenReturn(new String[0]);
         assertEquals(0, mEventQueue.size());
     }
 
+    @Test
     public void testSize() {
         when(mMockCountlyStore.events()).thenReturn(new String[2]);
         assertEquals(2, mEventQueue.size());
     }
 
+    @Test
     public void testEvents_emptyList() throws UnsupportedEncodingException {
-        final List<Event> eventsList = new ArrayList<Event>();
+        final List<Event> eventsList = new ArrayList<>();
         when(mMockCountlyStore.eventsList()).thenReturn(eventsList);
 
         final String expected = URLEncoder.encode("[]", "UTF-8");
@@ -90,8 +122,9 @@ public class EventQueueTests extends AndroidTestCase {
         verify(mMockCountlyStore).removeEvents(eventsList);
     }
 
+    @Test
     public void testEvents_nonEmptyList() throws UnsupportedEncodingException {
-        final List<Event> eventsList = new ArrayList<Event>();
+        final List<Event> eventsList = new ArrayList<>();
         final Event event1 = new Event();
         event1.key = "event1Key";
         eventsList.add(event1);

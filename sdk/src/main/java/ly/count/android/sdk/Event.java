@@ -48,6 +48,9 @@ class Event {
 
     public String key;
     public Map<String, String> segmentation;
+    public Map<String, Integer> segmentationInt;
+    public Map<String, Double> segmentationDouble;
+    public Map<String, Boolean> segmentationBoolean;
     public int count;
     public double sum;
     public double dur;
@@ -57,11 +60,13 @@ class Event {
 
     Event () {}
 
-    public Event (String key) {
+    Event(String key) {
+        UtilsTime.Instant instant = UtilsTime.getCurrentInstant();
+
         this.key = key;
-        this.timestamp = Countly.currentTimestampMs();
-        this.hour = Countly.currentHour();
-        this.dow = Countly.currentDayOfWeek();
+        this.timestamp = instant.timestampMs;
+        this.hour = instant.hour;
+        this.dow = instant.dow;
     }
 
     /**
@@ -78,8 +83,33 @@ class Event {
             json.put(HOUR, hour);
             json.put(DAY_OF_WEEK, dow);
 
+            JSONObject jobj = new JSONObject();
             if (segmentation != null) {
-                json.put(SEGMENTATION_KEY, new JSONObject(segmentation));
+                for (Map.Entry<String, String> pair : segmentation.entrySet()) {
+                    jobj.put(pair.getKey(), pair.getValue());
+                }
+            }
+
+            if(segmentationInt != null){
+                for (Map.Entry<String, Integer> pair : segmentationInt.entrySet()) {
+                    jobj.put(pair.getKey(), pair.getValue());
+                }
+            }
+
+            if(segmentationDouble != null){
+                for (Map.Entry<String, Double> pair : segmentationDouble.entrySet()) {
+                    jobj.put(pair.getKey(), pair.getValue());
+                }
+            }
+
+            if(segmentationBoolean != null){
+                for (Map.Entry<String, Boolean> pair : segmentationBoolean.entrySet()) {
+                    jobj.put(pair.getKey(), pair.getValue());
+                }
+            }
+
+            if(segmentation != null || segmentationInt != null || segmentationDouble != null || segmentationBoolean != null) {
+                json.put(SEGMENTATION_KEY, jobj);
             }
 
             // we put in the sum last, the only reason that a JSONException would be thrown
@@ -122,16 +152,38 @@ class Event {
             event.dow = json.optInt(DAY_OF_WEEK);
 
             if (!json.isNull(SEGMENTATION_KEY)) {
-                final JSONObject segm = json.getJSONObject(SEGMENTATION_KEY);
-                final HashMap<String, String> segmentation = new HashMap<String, String>(segm.length());
+                JSONObject segm = json.getJSONObject(SEGMENTATION_KEY);
+
+                final HashMap<String, String> segmentation = new HashMap<>();
+                final HashMap<String, Integer> segmentationInt = new HashMap<>();
+                final HashMap<String, Double> segmentationDouble = new HashMap<>();
+                final HashMap<String, Boolean> segmentationBoolean = new HashMap<>();
+
                 final Iterator nameItr = segm.keys();
                 while (nameItr.hasNext()) {
                     final String key = (String) nameItr.next();
                     if (!segm.isNull(key)) {
-                        segmentation.put(key, segm.getString(key));
+                        Object obj = segm.opt(key);
+
+                        if(obj instanceof Double){
+                            //in case it's a double
+                            segmentationDouble.put(key, segm.getDouble(key));
+                        } else if(obj instanceof Integer) {
+                            //in case it's a integer
+                            segmentationInt.put(key, segm.getInt(key));
+                        } else if(obj instanceof Boolean){
+                            //in case it's a boolean
+                            segmentationBoolean.put(key, segm.getBoolean(key));
+                        } else {
+                            //assume it's String
+                            segmentation.put(key, segm.getString(key));
+                        }
                     }
                 }
                 event.segmentation = segmentation;
+                event.segmentationDouble = segmentationDouble;
+                event.segmentationInt = segmentationInt;
+                event.segmentationBoolean = segmentationBoolean;
             }
         }
         catch (JSONException e) {

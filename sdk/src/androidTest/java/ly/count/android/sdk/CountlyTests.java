@@ -22,43 +22,47 @@ THE SOFTWARE.
 package ly.count.android.sdk;
 
 import android.content.Context;
-import android.test.AndroidTestCase;
+
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+
+import org.junit.After;
+import org.junit.Before;
 
 import java.util.HashMap;
 
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Mockito.*;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyZeroInteractions;
-import static org.mockito.Mockito.when;
+import static androidx.test.InstrumentationRegistry.getContext;
 
-public class CountlyTests extends AndroidTestCase {
+import static org.junit.Assert.*;
+import static org.junit.Assert.assertNull;
+import static org.mockito.Mockito.*;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.AdditionalMatchers;
+import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
+
+@RunWith(AndroidJUnit4.class)
+public class CountlyTests {
     Countly mUninitedCountly;
     Countly mCountly;
 
-    @Override
-    protected void setUp() throws Exception {
-        super.setUp();
-
+    @Before
+    public void setUp() {
         final CountlyStore countlyStore = new CountlyStore(getContext());
         countlyStore.clear();
 
         mUninitedCountly = new Countly();
 
         mCountly = new Countly();
-        mCountly.init(getContext(), "http://test.count.ly", "appkey", "1234");
+        mCountly.init((new CountlyConfig(getContext(), "appkey", "http://test.count.ly")).setDeviceId("1234").setLoggingEnabled(true).enableCrashReporting());
     }
 
-    @Override
-    protected void tearDown() throws Exception {
-        super.tearDown();
+    @After
+    public void tearDown() {
     }
 
+    @Test
     public void testConstructor() {
         assertNotNull(mUninitedCountly.getConnectionQueue());
         assertNull(mUninitedCountly.getConnectionQueue().getContext());
@@ -68,23 +72,27 @@ public class CountlyTests extends AndroidTestCase {
         assertNotNull(mUninitedCountly.getTimerService());
         assertNull(mUninitedCountly.getEventQueue());
         assertEquals(0, mUninitedCountly.getActivityCount());
-        assertEquals(0, mUninitedCountly.getPrevSessionDurationStartTime());
+        assertNull(mUninitedCountly.moduleSessions);
         assertFalse(mUninitedCountly.getDisableUpdateSessionRequests());
         assertFalse(mUninitedCountly.isLoggingEnabled());
     }
 
+    @Test
     public void testSharedInstance() {
         Countly sharedCountly = Countly.sharedInstance();
         assertNotNull(sharedCountly);
         assertSame(sharedCountly, Countly.sharedInstance());
     }
 
+    @Test
     public void testInitWithNoDeviceID() {
         mUninitedCountly = spy(mUninitedCountly);
-        mUninitedCountly.init(getContext(), "http://test.count.ly", "appkey", null);
-        verify(mUninitedCountly).init(getContext(), "http://test.count.ly", "appkey", null);
+        CountlyConfig cc = (new CountlyConfig(getContext(), "appkey", "http://test.count.ly"));
+        mUninitedCountly.init(cc);
+        verify(mUninitedCountly).init(cc);
     }
 
+    @Test
     public void testInit_nullContext() {
         try {
             mUninitedCountly.init(null, "http://test.count.ly", "appkey", "1234");
@@ -94,71 +102,79 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testInit_nullServerURL() {
         try {
-            mUninitedCountly.init(getContext(), null, "appkey", "1234");
+            mUninitedCountly.init((new CountlyConfig(getContext(), "appkey", null)).setDeviceId("1234"));
             fail("expected null server URL to throw IllegalArgumentException");
         } catch (IllegalArgumentException ignored) {
             // success!
         }
     }
 
+    @Test
     public void testInit_emptyServerURL() {
         try {
-            mUninitedCountly.init(getContext(), "", "appkey", "1234");
+            mUninitedCountly.init((new CountlyConfig(getContext(), "appkey", "")).setDeviceId("1234"));
             fail("expected empty server URL to throw IllegalArgumentException");
         } catch (IllegalArgumentException ignored) {
             // success!
         }
     }
 
+    @Test
     public void testInit_invalidServerURL() {
         try {
-            mUninitedCountly.init(getContext(), "not-a-valid-server-url", "appkey", "1234");
+            mUninitedCountly.init((new CountlyConfig(getContext(), "appkey", "not-a-valid-server-url")).setDeviceId("1234"));
             fail("expected invalid server URL to throw IllegalArgumentException");
         } catch (IllegalArgumentException ignored) {
             // success!
         }
     }
 
+    @Test
     public void testInit_nullAppKey() {
         try {
-            mUninitedCountly.init(getContext(), "http://test.count.ly", null, "1234");
+            mUninitedCountly.init((new CountlyConfig(getContext(), null, "http://test.count.ly")).setDeviceId("1234"));
             fail("expected null app key to throw IllegalArgumentException");
         } catch (IllegalArgumentException ignored) {
             // success!
         }
     }
 
+    @Test
     public void testInit_emptyAppKey() {
         try {
-            mUninitedCountly.init(getContext(), "http://test.count.ly", "", "1234");
+            mUninitedCountly.init((new CountlyConfig(getContext(), "", "http://test.count.ly")).setDeviceId("1234"));
             fail("expected empty app key to throw IllegalArgumentException");
         } catch (IllegalArgumentException ignored) {
             // success!
         }
     }
 
+    @Test
     public void testInit_nullDeviceID() {
         // null device ID is okay because it tells Countly to use OpenUDID
-       mUninitedCountly.init(getContext(), "http://test.count.ly", "appkey", null);
+       mUninitedCountly.init((new CountlyConfig(getContext(), "appkey", "http://test.count.ly")).setDeviceId(null));
     }
 
+    @Test
     public void testInit_emptyDeviceID() {
         try {
-            mUninitedCountly.init(getContext(), "http://test.count.ly", "appkey", "");
+            mUninitedCountly.init((new CountlyConfig(getContext(), "appkey", "http://test.count.ly")).setDeviceId(""));
             fail("expected empty device ID to throw IllegalArgumentException");
         } catch (IllegalArgumentException ignored) {
             // success!
         }
     }
 
+    @Test
     public void testInit_twiceWithSameParams() {
         final String deviceID = "1234";
         final String appKey = "appkey";
         final String serverURL = "http://test.count.ly";
 
-        mUninitedCountly.init(getContext(), serverURL, appKey, deviceID);
+        mUninitedCountly.init((new CountlyConfig(getContext(), appKey, serverURL)).setDeviceId(deviceID));
         final EventQueue expectedEventQueue = mUninitedCountly.getEventQueue();
         final ConnectionQueue expectedConnectionQueue = mUninitedCountly.getConnectionQueue();
         final CountlyStore expectedCountlyStore = expectedConnectionQueue.getCountlyStore();
@@ -167,27 +183,33 @@ public class CountlyTests extends AndroidTestCase {
         assertNotNull(expectedCountlyStore);
 
         // second call with same params should succeed, no exception thrown
-        mUninitedCountly.init(getContext(), serverURL, appKey, deviceID);
+        mUninitedCountly.init((new CountlyConfig(getContext(), appKey, serverURL)).setDeviceId(deviceID));
 
         assertSame(expectedEventQueue, mUninitedCountly.getEventQueue());
         assertSame(expectedConnectionQueue, mUninitedCountly.getConnectionQueue());
         assertSame(expectedCountlyStore, mUninitedCountly.getConnectionQueue().getCountlyStore());
-        assertSame(getContext(), mUninitedCountly.getConnectionQueue().getContext());
+        assertSame(getContext().getApplicationContext(), mUninitedCountly.getConnectionQueue().getContext());
         assertEquals(serverURL, mUninitedCountly.getConnectionQueue().getServerURL());
         assertEquals(appKey, mUninitedCountly.getConnectionQueue().getAppKey());
         assertSame(mUninitedCountly.getConnectionQueue().getCountlyStore(), mUninitedCountly.getEventQueue().getCountlyStore());
     }
 
+    @Test
     public void testInit_twiceWithDifferentContext() {
         mUninitedCountly.init(getContext(), "http://test.count.ly", "appkey", "1234");
         // changing context is okay since SharedPrefs are global singletons
-        mUninitedCountly.init(mock(Context.class), "http://test.count.ly", "appkey", "1234");
+
+        Context mContext = mock(Context.class);
+        when(mContext.getCacheDir()).thenReturn(getContext().getCacheDir());
+
+        mUninitedCountly.init(mContext, "http://test.count.ly", "appkey", "1234");
     }
 
+    @Test
     public void testInit_twiceWithDifferentServerURL() {
-        mUninitedCountly.init(getContext(), "http://test1.count.ly", "appkey", "1234");
+        mUninitedCountly.init((new CountlyConfig(getContext(), "appkey", "http://test1.count.ly")).setDeviceId("1234"));
         try {
-            mUninitedCountly.init(getContext(), "http://test2.count.ly", "appkey", "1234");
+            mUninitedCountly.init((new CountlyConfig(getContext(), "appkey", "http://test2.count.ly")).setDeviceId("1234"));
             fail("expected IllegalStateException to be thrown when calling init a second time with different serverURL");
         }
         catch (IllegalStateException ignored) {
@@ -195,36 +217,39 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testInit_twiceWithDifferentAppKey() {
-        mUninitedCountly.init(getContext(), "http://test.count.ly", "appkey1", "1234");
+        mUninitedCountly.init((new CountlyConfig(getContext(), "appkey1", "http://test.count.ly")).setDeviceId("1234"));
         try {
-            mUninitedCountly.init(getContext(), "http://test.count.ly", "appkey2", "1234");
-            fail("expected IllegalStateException to be thrown when calling init a second time with different serverURL");
+            mUninitedCountly.init((new CountlyConfig(getContext(), "appkey2", "http://test.count.ly")).setDeviceId("1234"));
+            fail("expected IllegalStateException to be thrown when calling init a second time with different app key");
         }
         catch (IllegalStateException ignored) {
             // success!
         }
     }
 
+    @Test
     public void testInit_twiceWithDifferentDeviceID() {
-        mUninitedCountly.init(getContext(), "http://test.count.ly", "appkey", "1234");
+        mUninitedCountly.init((new CountlyConfig(getContext(), "appkey", "http://test.count.ly")).setDeviceId("1234"));
         try {
-            mUninitedCountly.init(getContext(), "http://test.count.ly", "appkey", "4321");
-            fail("expected IllegalStateException to be thrown when calling init a second time with different serverURL");
+            mUninitedCountly.init((new CountlyConfig(getContext(), "appkey", "http://test.count.ly")).setDeviceId("4321"));
+            fail("expected IllegalStateException to be thrown when calling init a second time with different device ID");
         }
         catch (IllegalStateException ignored) {
             // success!
         }
     }
 
+    @Test
     public void testInit_normal() {
         final String deviceID = "1234";
         final String appKey = "appkey";
         final String serverURL = "http://test.count.ly";
 
-        mUninitedCountly.init(getContext(), serverURL, appKey, deviceID);
+        mUninitedCountly.init((new CountlyConfig(getContext(), appKey, serverURL)).setDeviceId(deviceID));
 
-        assertSame(getContext(), mUninitedCountly.getConnectionQueue().getContext());
+        assertSame(getContext().getApplicationContext(), mUninitedCountly.getConnectionQueue().getContext());
         assertEquals(serverURL, mUninitedCountly.getConnectionQueue().getServerURL());
         assertEquals(appKey, mUninitedCountly.getConnectionQueue().getAppKey());
         assertNotNull(mUninitedCountly.getConnectionQueue().getCountlyStore());
@@ -232,6 +257,7 @@ public class CountlyTests extends AndroidTestCase {
         assertSame(mUninitedCountly.getConnectionQueue().getCountlyStore(), mUninitedCountly.getEventQueue().getCountlyStore());
     }
 
+    @Test
     public void testHalt_notInitialized() {
         mUninitedCountly.halt();
         assertNotNull(mUninitedCountly.getConnectionQueue());
@@ -242,11 +268,16 @@ public class CountlyTests extends AndroidTestCase {
         assertNotNull(mUninitedCountly.getTimerService());
         assertNull(mUninitedCountly.getEventQueue());
         assertEquals(0, mUninitedCountly.getActivityCount());
-        assertEquals(0, mUninitedCountly.getPrevSessionDurationStartTime());
+        assertNull(mUninitedCountly.moduleSessions);
     }
 
+    @Test
     public void testHalt() {
-        final CountlyStore mockCountlyStore = mock(CountlyStore.class);
+        CountlyStore mockCountlyStore = mock(CountlyStore.class);
+
+        when(mockCountlyStore.getLocationDisabled()).thenReturn(true);
+        when(mockCountlyStore.getCachedAdvertisingId()).thenReturn("");
+
         mCountly.getConnectionQueue().setCountlyStore(mockCountlyStore);
         mCountly.onStart(null);
         assertTrue(0 != mCountly.getPrevSessionDurationStartTime());
@@ -256,6 +287,18 @@ public class CountlyTests extends AndroidTestCase {
         assertNotNull(mCountly.getConnectionQueue().getServerURL());
         assertNotNull(mCountly.getConnectionQueue().getAppKey());
         assertNotNull(mCountly.getConnectionQueue().getContext());
+
+        assertNotEquals(0, mCountly.modules.size());
+
+        assertNotNull(mCountly.moduleSessions);
+        assertNotNull(mCountly.moduleCrash);
+        assertNotNull(mCountly.moduleEvents);
+        assertNotNull(mCountly.moduleRatings);
+        assertNotNull(mCountly.moduleViews);
+
+        for(ModuleBase module:mCountly.modules){
+            assertNotNull(module);
+        }
 
         mCountly.halt();
 
@@ -268,9 +311,16 @@ public class CountlyTests extends AndroidTestCase {
         assertNotNull(mCountly.getTimerService());
         assertNull(mCountly.getEventQueue());
         assertEquals(0, mCountly.getActivityCount());
-        assertEquals(0, mCountly.getPrevSessionDurationStartTime());
+
+        assertNull(mCountly.moduleSessions);
+        assertNull(mCountly.moduleCrash);
+        assertNull(mCountly.moduleEvents);
+        assertNull(mCountly.moduleRatings);
+        assertNull(mCountly.moduleViews);
+        assertEquals(0, mCountly.modules.size());
     }
 
+    @Test
     public void testOnStart_initNotCalled() {
         try {
             mUninitedCountly.onStart(null);
@@ -280,6 +330,7 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testOnStart_firstCall() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -293,6 +344,7 @@ public class CountlyTests extends AndroidTestCase {
         verify(mockConnectionQueue).beginSession();
     }
 
+    @Test
     public void testOnStart_subsequentCall() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -306,6 +358,7 @@ public class CountlyTests extends AndroidTestCase {
         verify(mockConnectionQueue).beginSession();
     }
 
+    @Test
     public void testOnStop_initNotCalled() {
         try {
             mUninitedCountly.onStop();
@@ -315,6 +368,7 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testOnStop_unbalanced() {
         try {
             mCountly.onStop();
@@ -324,6 +378,7 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testOnStop_reallyStopping_emptyEventQueue() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -333,10 +388,11 @@ public class CountlyTests extends AndroidTestCase {
 
         assertEquals(0, mCountly.getActivityCount());
         assertEquals(0, mCountly.getPrevSessionDurationStartTime());
-        verify(mockConnectionQueue).endSession(0);
+        verify(mockConnectionQueue).endSession(0, null);
         verify(mockConnectionQueue, times(0)).recordEvents(anyString());
     }
 
+    @Test
     public void testOnStop_reallyStopping_nonEmptyEventQueue() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -353,10 +409,11 @@ public class CountlyTests extends AndroidTestCase {
 
         assertEquals(0, mCountly.getActivityCount());
         assertEquals(0, mCountly.getPrevSessionDurationStartTime());
-        verify(mockConnectionQueue).endSession(0);
+        verify(mockConnectionQueue).endSession(0, null);
         verify(mockConnectionQueue).recordEvents(eventStr);
     }
 
+    @Test
     public void testOnStop_notStopping() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -372,6 +429,7 @@ public class CountlyTests extends AndroidTestCase {
         verify(mockConnectionQueue, times(0)).recordEvents(anyString());
     }
 
+    @Test
     public void testRecordEvent_keyOnly() {
         final String eventKey = "eventKey";
         final Countly countly = spy(mCountly);
@@ -380,31 +438,18 @@ public class CountlyTests extends AndroidTestCase {
         verify(countly).recordEvent(eventKey, null, 1, 0.0d);
     }
 
+    @Test
     public void testRecordEvent_keyAndCount() {
         final String eventKey = "eventKey";
         final int count = 42;
         final Countly countly = spy(mCountly);
 
-
         doNothing().when(countly).recordEvent(eventKey, null, count, 0.0d);
-        //doReturn(true).when(countly).recordEvent(eventKey, null, count, 0.0d);
-        countly.recordEvent(eventKey, count);
+        countly.recordEvent(eventKey, null, count, 0.0d);
         verify(countly).recordEvent(eventKey, null, count, 0.0d);
-
-        //doNothing().when(countly).recordEvent(eventKey, null, count, 0.0d);
-        //doNothing().when(countly).recordEvent(eventKey, count);
-        //countly.recordEvent(eventKey, count);
-        //verify(countly).recordEvent(eventKey, null, count, 0.0d);
-
-        //doNothing().when(countly).recordEvent(eventKey, count);
-        //countly.recordEvent(eventKey, count);
-        //verify(countly).recordEvent(eventKey, count);
-
-        //doNothing().when(countly).recordEvent(eventKey, null, count, 0.0d);
-        //countly.recordEvent(eventKey, null, count, 0.0d);
-        //verify(countly).recordEvent(eventKey, null, count, 0.0d);
     }
 
+    @Test
     public void testRecordEvent_keyAndCountAndSum() {
         final String eventKey = "eventKey";
         final int count = 42;
@@ -415,10 +460,11 @@ public class CountlyTests extends AndroidTestCase {
         verify(countly).recordEvent(eventKey, null, count, sum);
     }
 
+    @Test
     public void testRecordEvent_keyAndSegmentationAndCount() {
         final String eventKey = "eventKey";
         final int count = 42;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put("segkey1", "segvalue1");
         final Countly countly = spy(mCountly);
         doNothing().when(countly).recordEvent(eventKey, segmentation, count, 0.0d);
@@ -426,11 +472,12 @@ public class CountlyTests extends AndroidTestCase {
         verify(countly).recordEvent(eventKey, segmentation, count, 0.0d);
     }
 
+    @Test
     public void testRecordEvent_initNotCalled() {
         final String eventKey = "eventKey";
         final int count = 42;
         final double sum = 3.0d;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put("segkey1", "segvalue1");
 
         try {
@@ -441,11 +488,12 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testRecordEvent_nullKey() {
         final String eventKey = null;
         final int count = 42;
         final double sum = 3.0d;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put("segkey1", "segvalue1");
 
         try {
@@ -457,11 +505,12 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testRecordEvent_emptyKey() {
         final String eventKey = "";
         final int count = 42;
         final double sum = 3.0d;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put("segkey1", "segvalue1");
 
         try {
@@ -472,11 +521,12 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testRecordEvent_countIsZero() {
         final String eventKey = "";
         final int count = 0;
         final double sum = 3.0d;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put("segkey1", "segvalue1");
 
         try {
@@ -487,11 +537,12 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testRecordEvent_countIsNegative() {
         final String eventKey = "";
         final int count = -1;
         final double sum = 3.0d;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put("segkey1", "segvalue1");
 
         try {
@@ -502,11 +553,12 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testRecordEvent_segmentationHasNullKey() {
         final String eventKey = "";
         final int count = 1;
         final double sum = 3.0d;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put(null, "segvalue1");
 
         try {
@@ -517,11 +569,12 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testRecordEvent_segmentationHasEmptyKey() {
         final String eventKey = "";
         final int count = 1;
         final double sum = 3.0d;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put("", "segvalue1");
 
         try {
@@ -532,11 +585,12 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testRecordEvent_segmentationHasNullValue() {
         final String eventKey = "";
         final int count = 1;
         final double sum = 3.0d;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put("segkey1", null);
 
         try {
@@ -547,11 +601,12 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testRecordEvent_segmentationHasEmptyValue() {
         final String eventKey = "";
         final int count = 1;
         final double sum = 3.0d;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put("segkey1", "");
 
         try {
@@ -562,25 +617,34 @@ public class CountlyTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testRecordEvent() {
         final String eventKey = "eventKey";
         final int count = 42;
         final double sum = 3.0d;
         final double dur = 10.0d;
-        final HashMap<String, String> segmentation = new HashMap<String, String>(1);
+        final HashMap<String, String> segmentation = new HashMap<>(1);
         segmentation.put("segkey1", "segvalue1");
+        final HashMap<String, Double> segmD = new HashMap<>();
+        final HashMap<String, Integer> segmI = new HashMap<>();
+        final HashMap<String, Boolean> segmB = new HashMap<>();
 
         final EventQueue mockEventQueue = mock(EventQueue.class);
         mCountly.setEventQueue(mockEventQueue);
 
         final Countly countly = spy(mCountly);
-        doNothing().when(countly).sendEventsIfNeeded();
-        countly.recordEvent(eventKey, segmentation, count, sum);
+        countly.moduleEvents._cly = countly;
 
-        verify(mockEventQueue).recordEvent(eventKey, segmentation, count, sum, dur);
+        doNothing().when(countly).sendEventsIfNeeded();
+        doReturn(true).when(countly).isInitialized();
+
+        countly.recordEvent(eventKey, segmentation, count, sum, dur);
+
+        verify(mockEventQueue).recordEvent(eventKey, segmentation, segmI, segmD, segmB, count, sum, dur, null);
         verify(countly).sendEventsIfNeeded();
     }
 
+    @Test
     public void testSendEventsIfNeeded_emptyQueue() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -595,6 +659,7 @@ public class CountlyTests extends AndroidTestCase {
         verifyZeroInteractions(mockConnectionQueue);
     }
 
+    @Test
     public void testSendEventsIfNeeded_lessThanThreshold() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -609,6 +674,7 @@ public class CountlyTests extends AndroidTestCase {
         verifyZeroInteractions(mockConnectionQueue);
     }
 
+    @Test
     public void testSendEventsIfNeeded_equalToThreshold() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -625,6 +691,7 @@ public class CountlyTests extends AndroidTestCase {
         verify(mockConnectionQueue, times(1)).recordEvents(eventData);
     }
 
+    @Test
     public void testSendEventsIfNeeded_moreThanThreshold() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -641,6 +708,7 @@ public class CountlyTests extends AndroidTestCase {
         verify(mockConnectionQueue, times(1)).recordEvents(eventData);
     }
 
+    @Test
     public void testOnTimer_noActiveSession() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -650,9 +718,11 @@ public class CountlyTests extends AndroidTestCase {
 
         mCountly.onTimer();
 
-        verifyZeroInteractions(mockConnectionQueue, mockEventQueue);
+        verifyZeroInteractions(mockEventQueue);
+        verify(mockConnectionQueue).tick();
     }
 
+    @Test
     public void testOnTimer_activeSession_emptyEventQueue() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -668,6 +738,7 @@ public class CountlyTests extends AndroidTestCase {
         verify(mockConnectionQueue, times(0)).recordEvents(anyString());
     }
 
+    @Test
     public void testOnTimer_activeSession_nonEmptyEventQueue() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -685,6 +756,7 @@ public class CountlyTests extends AndroidTestCase {
         verify(mockConnectionQueue).recordEvents(eventData);
     }
 
+    @Test
     public void testOnTimer_activeSession_emptyEventQueue_sessionTimeUpdatesDisabled() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -701,6 +773,7 @@ public class CountlyTests extends AndroidTestCase {
         verify(mockConnectionQueue, times(0)).recordEvents(anyString());
     }
 
+    @Test
     public void testOnTimer_activeSession_nonEmptyEventQueue_sessionTimeUpdatesDisabled() {
         final ConnectionQueue mockConnectionQueue = mock(ConnectionQueue.class);
         mCountly.setConnectionQueue(mockConnectionQueue);
@@ -719,41 +792,46 @@ public class CountlyTests extends AndroidTestCase {
         verify(mockConnectionQueue).recordEvents(eventData);
     }
 
+    @Test
     public void testRoundedSecondsSinceLastSessionDurationUpdate() {
         long prevSessionDurationStartTime = System.nanoTime() - 1000000000;
         mCountly.setPrevSessionDurationStartTime(prevSessionDurationStartTime);
-        assertEquals(1, mCountly.roundedSecondsSinceLastSessionDurationUpdate());
+        assertEquals(1, mCountly.moduleSessions.roundedSecondsSinceLastSessionDurationUpdate());
 
         prevSessionDurationStartTime = System.nanoTime() - 2000000000;
         mCountly.setPrevSessionDurationStartTime(prevSessionDurationStartTime);
-        assertEquals(2, mCountly.roundedSecondsSinceLastSessionDurationUpdate());
+        assertEquals(2, mCountly.moduleSessions.roundedSecondsSinceLastSessionDurationUpdate());
 
         prevSessionDurationStartTime = System.nanoTime() - 1600000000;
         mCountly.setPrevSessionDurationStartTime(prevSessionDurationStartTime);
-        assertEquals(2, mCountly.roundedSecondsSinceLastSessionDurationUpdate());
+        assertEquals(2, mCountly.moduleSessions.roundedSecondsSinceLastSessionDurationUpdate());
 
         prevSessionDurationStartTime = System.nanoTime() - 1200000000;
         mCountly.setPrevSessionDurationStartTime(prevSessionDurationStartTime);
-        assertEquals(1, mCountly.roundedSecondsSinceLastSessionDurationUpdate());
+        assertEquals(1, mCountly.moduleSessions.roundedSecondsSinceLastSessionDurationUpdate());
     }
 
+    @Test
     public void testIsValidURL_badURLs() {
-        assertFalse(Countly.isValidURL(null));
-        assertFalse(Countly.isValidURL(""));
-        assertFalse(Countly.isValidURL(" "));
-        assertFalse(Countly.isValidURL("blahblahblah.com"));
+        assertFalse(UtilsNetworking.isValidURL(null));
+        assertFalse(UtilsNetworking.isValidURL(""));
+        assertFalse(UtilsNetworking.isValidURL(" "));
+        assertFalse(UtilsNetworking.isValidURL("blahblahblah.com"));
     }
 
+    @Test
     public void testIsValidURL_goodURL() {
-        assertTrue(Countly.isValidURL("http://test.count.ly"));
+        assertTrue(UtilsNetworking.isValidURL("http://test.count.ly"));
     }
 
+    @Test
     public void testCurrentTimestamp() {
-        final int testTimestamp = (int) (System.currentTimeMillis() / 1000l);
-        final int actualTimestamp = Countly.currentTimestamp();
+        final int testTimestamp = (int) (System.currentTimeMillis() / 1000L);
+        final int actualTimestamp = UtilsTime.currentTimestampSeconds();
         assertTrue(((testTimestamp - 1) <= actualTimestamp) && ((testTimestamp + 1) >= actualTimestamp));
     }
 
+    @Test
     public void testSetDisableUpdateSessionRequests() {
         assertFalse(mCountly.getDisableUpdateSessionRequests());
         mCountly.setDisableUpdateSessionRequests(true);
@@ -762,6 +840,7 @@ public class CountlyTests extends AndroidTestCase {
         assertFalse(mCountly.getDisableUpdateSessionRequests());
     }
 
+    @Test
     public void testLoggingFlag() {
         assertFalse(mUninitedCountly.isLoggingEnabled());
         mUninitedCountly.setLoggingEnabled(true);

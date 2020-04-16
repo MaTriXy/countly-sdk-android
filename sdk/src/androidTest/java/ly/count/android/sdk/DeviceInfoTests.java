@@ -25,8 +25,8 @@ import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import android.telephony.TelephonyManager;
-import android.test.AndroidTestCase;
 import android.util.DisplayMetrics;
 import android.view.WindowManager;
 
@@ -37,25 +37,38 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.Locale;
 
+import static androidx.test.InstrumentationRegistry.getContext;
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyZeroInteractions;
-import static org.mockito.Mockito.when;
 
-public class DeviceInfoTests extends AndroidTestCase {
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
 
+@RunWith(AndroidJUnit4.class)
+public class DeviceInfoTests {
+
+    @Before
+    public void setUp(){
+        Countly.sharedInstance().setLoggingEnabled(true);
+    }
+
+    @Test
     public void testGetOS() {
         assertEquals("Android", DeviceInfo.getOS());
     }
 
+    @Test
     public void testGetOSVersion() {
         assertEquals(android.os.Build.VERSION.RELEASE, DeviceInfo.getOSVersion());
     }
 
+    @Test
     public void testGetDevice() {
         assertEquals(android.os.Build.MODEL, DeviceInfo.getDevice());
     }
 
+    @Test
     public void testGetResolution() {
         final DisplayMetrics metrics = new DisplayMetrics();
         ((WindowManager) getContext().getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getMetrics(metrics);
@@ -63,12 +76,14 @@ public class DeviceInfoTests extends AndroidTestCase {
         assertEquals(expected, DeviceInfo.getResolution(getContext()));
     }
 
+    @Test
     public void testGetResolution_getWindowManagerReturnsNull() {
         final Context mockContext = mock(Context.class);
         when(mockContext.getSystemService(Context.WINDOW_SERVICE)).thenReturn(null);
         assertEquals("", DeviceInfo.getResolution(mockContext));
     }
 
+    @Test
     public void testGetResolution_getDefaultDisplayReturnsNull() {
         final WindowManager mockWindowMgr = mock(WindowManager.class);
         when(mockWindowMgr.getDefaultDisplay()).thenReturn(null);
@@ -87,6 +102,7 @@ public class DeviceInfoTests extends AndroidTestCase {
         return mockContext;
     }
 
+    @Test
     public void testGetDensity() {
         Context mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_LOW);
         assertEquals("LDPI", DeviceInfo.getDensity(mockContext));
@@ -102,17 +118,14 @@ public class DeviceInfoTests extends AndroidTestCase {
         assertEquals("XXHDPI", DeviceInfo.getDensity(mockContext));
         mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_XXXHIGH);
         assertEquals("XXXHDPI", DeviceInfo.getDensity(mockContext));
-        //todo uncomment in android sdk 25
-        //mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_260);
-        //assertEquals("XHDPI", DeviceInfo.getDensity(mockContext));
+        mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_260);
+        assertEquals("XHDPI", DeviceInfo.getDensity(mockContext));
         mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_280);
         assertEquals("XHDPI", DeviceInfo.getDensity(mockContext));
-        //todo uncomment in android sdk 25
-        //mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_300);
-        //assertEquals("XHDPI", DeviceInfo.getDensity(mockContext));
-        //todo uncomment in android sdk 25
-        //mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_340);
-        //assertEquals("XXHDPI", DeviceInfo.getDensity(mockContext));
+        mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_300);
+        assertEquals("XHDPI", DeviceInfo.getDensity(mockContext));
+        mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_340);
+        assertEquals("XXHDPI", DeviceInfo.getDensity(mockContext));
         mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_360);
         assertEquals("XXHDPI", DeviceInfo.getDensity(mockContext));
         mockContext = mockContextForTestingDensity(DisplayMetrics.DENSITY_400);
@@ -127,12 +140,14 @@ public class DeviceInfoTests extends AndroidTestCase {
         assertEquals("other", DeviceInfo.getDensity(mockContext));
     }
 
+    @Test
     public void testGetCarrier_nullTelephonyManager() {
         final Context mockContext = mock(Context.class);
         when(mockContext.getSystemService(Context.TELEPHONY_SERVICE)).thenReturn(null);
         assertEquals("", DeviceInfo.getCarrier(mockContext));
     }
 
+    @Test
     public void testGetCarrier_nullNetOperator() {
         final TelephonyManager mockTelephonyManager = mock(TelephonyManager.class);
         when(mockTelephonyManager.getNetworkOperatorName()).thenReturn(null);
@@ -141,6 +156,7 @@ public class DeviceInfoTests extends AndroidTestCase {
         assertEquals("", DeviceInfo.getCarrier(mockContext));
     }
 
+    @Test
     public void testGetCarrier_emptyNetOperator() {
         final TelephonyManager mockTelephonyManager = mock(TelephonyManager.class);
         when(mockTelephonyManager.getNetworkOperatorName()).thenReturn("");
@@ -149,6 +165,7 @@ public class DeviceInfoTests extends AndroidTestCase {
         assertEquals("", DeviceInfo.getCarrier(mockContext));
     }
 
+    @Test
     public void testGetCarrier() {
         final TelephonyManager mockTelephonyManager = mock(TelephonyManager.class);
         when(mockTelephonyManager.getNetworkOperatorName()).thenReturn("Verizon");
@@ -157,6 +174,7 @@ public class DeviceInfoTests extends AndroidTestCase {
         assertEquals("Verizon", DeviceInfo.getCarrier(mockContext));
     }
 
+    @Test
     public void testGetLocale() {
         final Locale defaultLocale = Locale.getDefault();
         try {
@@ -167,6 +185,7 @@ public class DeviceInfoTests extends AndroidTestCase {
         }
     }
 
+    @Test
     public void testGetAppVersion() throws PackageManager.NameNotFoundException {
         final PackageInfo pkgInfo = new PackageInfo();
         pkgInfo.versionName = "42.0";
@@ -179,6 +198,7 @@ public class DeviceInfoTests extends AndroidTestCase {
         assertEquals("42.0", DeviceInfo.getAppVersion(mockContext));
     }
 
+    @Test
     public void testGetAppVersion_pkgManagerThrows() throws PackageManager.NameNotFoundException {
         final String fakePkgName = "i.like.chicken";
         final PackageManager mockPkgMgr = mock(PackageManager.class);
@@ -189,6 +209,7 @@ public class DeviceInfoTests extends AndroidTestCase {
         assertEquals("1.0", DeviceInfo.getAppVersion(mockContext));
     }
 
+    @Test
     public void testGetMetrics() throws UnsupportedEncodingException, JSONException {
         final JSONObject json = new JSONObject();
         json.put("_device", DeviceInfo.getDevice());
@@ -206,18 +227,21 @@ public class DeviceInfoTests extends AndroidTestCase {
         assertEquals(expected, DeviceInfo.getMetrics(getContext()));
     }
 
+    @Test
     public void testFillJSONIfValuesNotEmpty_noValues() {
         final JSONObject mockJSON = mock(JSONObject.class);
         DeviceInfo.fillJSONIfValuesNotEmpty(mockJSON);
         verifyZeroInteractions(mockJSON);
     }
 
+    @Test
     public void testFillJSONIfValuesNotEmpty_oddNumberOfValues() {
         final JSONObject mockJSON = mock(JSONObject.class);
         DeviceInfo.fillJSONIfValuesNotEmpty(mockJSON, "key1", "value1", "key2");
         verifyZeroInteractions(mockJSON);
     }
 
+    @Test
     public void testFillJSONIfValuesNotEmpty() throws JSONException {
         final JSONObject json = new JSONObject();
         DeviceInfo.fillJSONIfValuesNotEmpty(json, "key1", "value1", "key2", null, "key3", "value3", "key4", "", "key5", "value5");

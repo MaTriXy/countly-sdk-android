@@ -1,16 +1,14 @@
 package ly.count.android.demo;
 
 import android.app.Activity;
+import android.content.res.Configuration;
 import android.os.Bundle;
 
 import ly.count.android.sdk.Countly;
 
 public class ActivityExampleMultiThreading extends Activity {
-    Activity activity;
-
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        activity = this;
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_example_custom_events);
         Countly.onCreate(this);
@@ -29,5 +27,11 @@ public class ActivityExampleMultiThreading extends Activity {
     {
         Countly.sharedInstance().onStop();
         super.onStop();
+    }
+
+    @Override
+    public void onConfigurationChanged (Configuration newConfig){
+        super.onConfigurationChanged(newConfig);
+        Countly.sharedInstance().onConfigurationChanged(newConfig);
     }
 }
