@@ -4,11 +4,6 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.util.Log;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
-
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
@@ -16,18 +11,22 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
 import ly.count.android.sdk.Countly;
+import ly.count.android.sdk.CountlyStore;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /**
  * Messaging support module.
  */
 
-class ModulePush {
+public class ModulePush {
 
-    static final String PUSH_EVENT_ACTION  = "[CLY]_push_action";
-    static final String PUSH_EVENT_ACTION_ID_KEY  = "i";
-    static final String PUSH_EVENT_ACTION_INDEX_KEY  = "b";
+    public static final String PUSH_EVENT_ACTION = "[CLY]_push_action";
+    public static final String PUSH_EVENT_ACTION_PLATFORM_KEY = "p";
+    public static final String PUSH_EVENT_ACTION_PLATFORM_VALUE = "a";
+    public static final String PUSH_EVENT_ACTION_ID_KEY = "i";
+    public static final String PUSH_EVENT_ACTION_INDEX_KEY = "b";
     static final String KEY_ID = "c.i";
     static final String KEY_TITLE = "title";
     static final String KEY_MESSAGE = "message";
@@ -97,7 +96,7 @@ class ModulePush {
 
             @Override
             public boolean equals(Object obj) {
-                if (obj == null || !(obj instanceof Button)) {
+                if (!(obj instanceof Button)) {
                     return false;
                 }
                 Button b = (Button) obj;
@@ -112,12 +111,12 @@ class ModulePush {
             this.message = data.get(KEY_MESSAGE);
             this.sound = data.get(KEY_SOUND);
 
-            Log.d("Countly", "constructed: " + id);
+            Countly.sharedInstance().L.d("[MessageImpl] constructed: " + id);
             Integer b = null;
             try {
                 b = data.containsKey(KEY_BADGE) ? Integer.parseInt(data.get(KEY_BADGE)) : null;
             } catch (NumberFormatException e) {
-                Log.w("Countly", "Bad badge value received, ignoring");
+                Countly.sharedInstance().L.w("[MessageImpl] Bad badge value received, ignoring");
             }
             this.badge = b;
 
@@ -126,7 +125,7 @@ class ModulePush {
                 try {
                     uri = Uri.parse(data.get(KEY_LINK));
                 } catch (Throwable e) {
-                    Log.w("Countly", "Cannot parse message link", e);
+                    Countly.sharedInstance().L.w("[MessageImpl] Cannot parse message link", e);
                 }
             }
             this.link = uri;
@@ -135,7 +134,7 @@ class ModulePush {
             try {
                 u = data.containsKey(KEY_MEDIA) ? new URL(data.get(KEY_MEDIA)) : null;
             } catch (MalformedURLException e) {
-                Log.w("Countly", "Bad media value received, ignoring");
+                Countly.sharedInstance().L.w("[MessageImpl] Bad media value received, ignoring");
             }
             this.media = u;
 
@@ -153,7 +152,7 @@ class ModulePush {
                                 try {
                                     uri = Uri.parse(btn.getString(KEY_BUTTONS_LINK));
                                 } catch (Throwable e) {
-                                    Log.w("Countly", "Cannot parse message link", e);
+                                    Countly.sharedInstance().L.w("[MessageImpl] Cannot parse message link", e);
                                 }
                             }
 
@@ -161,10 +160,9 @@ class ModulePush {
                         }
                     }
                 } catch (Throwable e) {
-                    Log.w("Countly", "Failed to parse buttons JSON", e);
+                    Countly.sharedInstance().L.w("[MessageImpl] Failed to parse buttons JSON", e);
                 }
             }
-
         }
 
         @Override
@@ -229,10 +227,16 @@ class ModulePush {
 
         @Override
         public void recordAction(Context context, int buttonIndex) {
-            Map<String, String> map = new HashMap<>();
-            map.put(PUSH_EVENT_ACTION_ID_KEY, id);
-            map.put(PUSH_EVENT_ACTION_INDEX_KEY, String.valueOf(buttonIndex));
-            Countly.sharedInstance().recordEvent(PUSH_EVENT_ACTION, map, 1);
+            if (Countly.sharedInstance().isInitialized()) {
+                Map<String, Object> map = new HashMap<>();
+                map.put(PUSH_EVENT_ACTION_PLATFORM_KEY, PUSH_EVENT_ACTION_PLATFORM_VALUE);
+                map.put(PUSH_EVENT_ACTION_ID_KEY, id);
+                map.put(PUSH_EVENT_ACTION_INDEX_KEY, String.valueOf(buttonIndex));
+                Countly.sharedInstance().events().recordEvent(PUSH_EVENT_ACTION, map, 1);
+            } else {
+                //we're not initialised, cache the data
+                CountlyStore.cachePushData(id, String.valueOf(buttonIndex), context);
+            }
         }
 
         @Override
@@ -248,7 +252,7 @@ class ModulePush {
         @Override
         public void writeToParcel(Parcel dest, int flags) {
             dest.writeMap(data);
-            Log.d("Countly", "written: " + data.get(KEY_ID));
+            Countly.sharedInstance().L.d("[MessageImpl] written: " + data.get(KEY_ID));
         }
 
         public static final Parcelable.Creator<MessageImpl> CREATOR = new Parcelable.Creator<MessageImpl>() {
@@ -256,7 +260,7 @@ class ModulePush {
             public MessageImpl createFromParcel(Parcel in) {
                 Map<String, String> map = new HashMap<>();
                 in.readMap(map, ClassLoader.getSystemClassLoader());
-                Log.d("Countly", "read: " + map.get(KEY_ID));
+                Countly.sharedInstance().L.d("[MessageImpl] read: " + map.get(KEY_ID));
                 return new MessageImpl(map);
             }
 

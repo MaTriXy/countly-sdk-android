@@ -1,55 +1,58 @@
-# Countly Android SDK <!-- [![Build Status](https://api.travis-ci.org/Countly/countly-sdk-android.png)](https://travis-ci.org/Countly/countly-sdk-android) --> [![API](https://img.shields.io/badge/API-9%2B-brightgreen.svg?style=flat)](https://android-arsenal.com/api?level=9)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/b26d1acc435c47af88b4e4b9eb94f59f)](https://app.codacy.com/gh/Countly/countly-sdk-android/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![API](https://img.shields.io/badge/API-9%2B-brightgreen.svg?style=flat)](https://android-arsenal.com/api?level=9)
 
-We're hiring: Countly is looking for Android SDK developers, full stack devs, devops and growth hackers (remote work). [Click this link for job description](https://angel.co/countly/jobs/)
+# Countly Android SDK
 
-* **Slack user?** [Join our Slack community](http://slack.count.ly)
-* **Questions?** [Ask in our Community forum](http://community.count.ly)
+This repository contains the Countly Android SDK, which can be integrated into Android applications. The Countly Android SDK is intended to be used with [Countly Lite](https://countly.com/lite), [Countly Flex](https://countly.com/flex), [Countly Enterprise](https://countly.com/enterprise).
 
-## What's Countly?
-[Countly](http://count.ly) is an innovative, real-time, open source mobile analytics application. It collects data from mobile devices, and visualizes this information to analyze mobile application usage and end-user behavior. There are two parts of Countly: the server that collects and analyzes data, and mobile SDK that sends this data. Both parts are open source with different licensing terms.
+## What is Countly?
+[Countly](https://count.ly) is a product analytics solution and innovation enabler that helps teams track product performance and customer journey and behavior across [mobile](https://count.ly/mobile-analytics), [web](https://count.ly/web-analytics),
+and [desktop](https://count.ly/desktop-analytics) applications. [Ensuring privacy by design](https://count.ly/privacy-by-design), Countly allows you to innovate and enhance your products to provide personalized and customized customer experiences, and meet key business and revenue goals.
 
-## About
+Track, measure, and take action - all without leaving Countly.
 
-This repository includes the Countly Android SDK. It can also be used to get user insights from Android TV or Wear devices.
+* **Questions or feature requests?** [Join the Countly Community on Discord](https://discord.gg/countly)
+* **Looking for the Countly Server?** [Countly Server repository](https://github.com/Countly/countly-server)
+* **Looking for other Countly SDKs?** [An overview of all Countly SDKs for mobile, web and desktop](https://support.count.ly/hc/en-us/articles/360037236571-Downloading-and-Installing-SDKs#h_01H9QCP8G5Y9PZJGERZ4XWYDY9)
 
-Need help? See [Countly SDK for Android](http://resources.count.ly/v1.0/docs/countly-sdk-for-android) documentation at [Countly Resources](http://resources.count.ly), or ask us on our [Countly Analytics Community Slack channel](http://slack.count.ly).
+## Integrating Countly SDK in your projects
 
-## Sample Android application
+For a detailed description on how to use this SDK [check out our documentation](https://support.count.ly/hc/en-us/articles/360037754031-Android).
 
-We have a comprehensive [sample Android application](https://github.com/Countly/countly-sdk-android/tree/master/app) which includes this SDK. Feel free to use this for testing purposes as you develop your application.
+For information about how to add the SDK to your project, please check [this section of the documentation](https://support.count.ly/hc/en-us/articles/360037754031-Android#h_01HAVQDM5SZRDX323EDDTNNMEF).
 
-![Android-sample-app](https://count.ly/github/countly-android-sample-app.png)
+You can find minimal SDK integration information for your project in [this section of the documentation](https://support.count.ly/hc/en-us/articles/360037754031-Android#h_01HAVQDM5SPR8WSAQ76DEREE2E).
+
+For an example integration of this SDK, you can have a look [here](https://github.com/Countly/countly-sdk-android/tree/master/app).
+
+This SDK supports the following features:
+* [Analytics](https://support.count.ly/hc/en-us/articles/4431589003545-Analytics)
+* [Push Notifications](https://support.count.ly/hc/en-us/articles/4405405459225-Push-Notifications)
+* [User Profiles](https://support.count.ly/hc/en-us/articles/4403281285913-User-Profiles)
+* [Crash Reports](https://support.count.ly/hc/en-us/articles/4404213566105-Crashes-Errors)
+* [A/B Testing](https://support.count.ly/hc/en-us/articles/4416496362393-A-B-Testing-)
+* [Performance Monitoring](https://support.count.ly/hc/en-us/articles/4734457847705-Performance)
+* [Feedback Widgets](https://support.count.ly/hc/en-us/articles/4652903481753-Feedback-Surveys-NPS-and-Ratings-)
 
 ## Security
-
 Security is very important to us. If you discover any issue regarding security, please disclose the information responsibly by sending an email to security@count.ly and **not by creating a GitHub issue**.
 
-## Other Github resources
+## Badges
+If you like Countly, [why not use one of our badges](https://count.ly/brand-assets) and give a link back to us so others know about this wonderful platform?
 
-This SDK needs one of the following Countly Editions to work: 
+<a href="https://count.ly/f/badge" rel="nofollow"><img style="width:145px;height:60px" src="https://count.ly/badges/dark.svg?v2" alt="Countly - Product Analytics" /></a>
 
-* Countly Community Edition, [downloadable from Github](https://github.com/Countly/countly-server)
-* [Countly Enterprise Edition](http://count.ly/product)
+```JS
+<a href="https://count.ly/f/badge" rel="nofollow"><img style="width:145px;height:60px" src="https://count.ly/badges/dark.svg" alt="Countly - Product Analytics" /></a>
+```
 
-For more information about Countly Enterprise Edition, see [comparison of different Countly editions](https://count.ly/compare/)
+<a href="https://count.ly/f/badge" rel="nofollow"><img style="width:145px;height:60px" src="https://count.ly/badges/light.svg?v2" alt="Countly - Product Analytics" /></a>
 
-There are also other Countly SDK repositories (both official and community supported) on [Countly resources](http://resources.count.ly/v1.0/docs/downloading-sdks).
+```JS
+<a href="https://count.ly/f/badge" rel="nofollow"><img style="width:145px;height:60px" src="https://count.ly/badges/light.svg" alt="Countly - Product Analytics" /></a>
+```
 
 ## How can I help you with your efforts?
-Glad you asked. We need ideas, feedback and constructive comments. All your suggestions will be taken care with utmost importance. We are on [Twitter](http://twitter.com/gocountly) and [Facebook](http://www.facebook.com/Countly) if you would like to keep up with our fast progress!
+Glad you asked! For community support, feature requests, and engaging with the Countly Community, please join us at [our Discord Server](https://discord.gg/countly). We're excited to have you there!
 
-## Badges
-
-If you like Countly, [why not use one of our badges](https://count.ly/brand-assets) and give a link back to us, so others know about this wonderful platform? 
-
-<a href="https://count.ly/f/badge" rel="nofollow"><img style="width:145px;height:60px" src="https://count.ly/badges/dark.svg" alt="Countly - Product Analytics" /></a>
-
-    <a href="https://count.ly/f/badge" rel="nofollow"><img style="width:145px;height:60px" src="https://count.ly/badges/dark.svg" alt="Countly - Product Analytics" /></a>
-
-<a href="https://count.ly/f/badge" rel="nofollow"><img style="width:145px;height:60px" src="https://count.ly/badges/light.svg" alt="Countly - Product Analytics" /></a>
-
-    <a href="https://count.ly/f/badge" rel="nofollow"><img style="width:145px;height:60px" src="https://count.ly/badges/light.svg" alt="Countly - Product Analytics" /></a>
-
-### Support
-
-For Community support, visit [http://community.count.ly](http://community.count.ly "Countly Community Forum").
+Also, we are on [Twitter](https://twitter.com/gocountly) and [LinkedIn](https://www.linkedin.com/company/countly) if you would like to keep up with Countly related updates.

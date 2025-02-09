@@ -1,7 +1,7 @@
 package ly.count.android.sdk;
 
-import android.util.Log;
-
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -11,7 +11,9 @@ public class UtilsNetworking {
     // http://stackoverflow.com/questions/9655181/convert-from-byte-array-to-hex-string-in-java
     final private static char[] hexArray = "0123456789ABCDEF".toCharArray();
 
-    protected static String urlEncodeString(String givenValue){
+    protected static @NonNull String urlEncodeString(@NonNull String givenValue) {
+        assert Utils.isNotNullOrEmpty(givenValue);
+
         String result = "";
 
         try {
@@ -23,7 +25,28 @@ public class UtilsNetworking {
         return result;
     }
 
-    protected static String urlDecodeString(String givenValue){
+    protected static @NonNull String encodedArrayBuilder(@NonNull String[] args) {
+        assert args != null && args.length > 0;
+
+        StringBuilder encodedUrlBuilder = new StringBuilder();
+
+        encodedUrlBuilder.append("[");
+
+        for (int i = 0; i < args.length; i++) {
+            encodedUrlBuilder.append('"').append(args[i]).append('"');
+            if (i < args.length - 1) {
+                encodedUrlBuilder.append(", ");
+            }
+        }
+
+        encodedUrlBuilder.append("]");
+
+        return encodedUrlBuilder.toString();
+    }
+
+    protected static @NonNull String urlDecodeString(@NonNull String givenValue) {
+        assert givenValue != null;
+
         String decodedResult = "";
 
         try {
@@ -35,21 +58,21 @@ public class UtilsNetworking {
         return decodedResult;
     }
 
-    protected static String sha1Hash (String toHash) {
-        String hash = null;
+    protected static @NonNull String sha256Hash(@NonNull String toHash) {
+        assert toHash != null;
+
+        String hash;
         try {
-            MessageDigest digest = MessageDigest.getInstance( "SHA-1" );
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] bytes = toHash.getBytes("UTF-8");
             digest.update(bytes, 0, bytes.length);
             bytes = digest.digest();
 
             // This is ~55x faster than looping and String.formating()
-            hash = bytesToHex( bytes );
-        }
-        catch( Throwable e ) {
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.e(Countly.TAG, "Cannot tamper-protect params", e);
-            }
+            hash = bytesToHex(bytes);
+        } catch (Throwable e) {
+            hash = "";
+            Countly.sharedInstance().L.e("Cannot tamper-protect params", e);
         }
         return hash;
     }
@@ -60,28 +83,29 @@ public class UtilsNetworking {
      * @param bytes array of bytes to convert
      * @return hex string of the byte array in lower case
      */
-    public static String bytesToHex(byte[] bytes ) {
-        char[] hexChars = new char[ bytes.length * 2 ];
-        for( int j = 0; j < bytes.length; j++ ) {
-            int v = bytes[ j ] & 0xFF;
-            hexChars[ j * 2 ] = hexArray[ v >>> 4 ];
-            hexChars[ j * 2 + 1 ] = hexArray[ v & 0x0F ];
+    public static @NonNull String bytesToHex(@NonNull byte[] bytes) {
+        assert bytes != null && bytes.length > 0;
+
+        char[] hexChars = new char[bytes.length * 2];
+        for (int j = 0; j < bytes.length; j++) {
+            int v = bytes[j] & 0xFF;
+            hexChars[j * 2] = hexArray[v >>> 4];
+            hexChars[j * 2 + 1] = hexArray[v & 0x0F];
         }
-        return new String( hexChars ).toLowerCase();
+        return new String(hexChars).toLowerCase();
     }
 
     /**
      * Utility method for testing validity of a URL.
      */
     @SuppressWarnings("ConstantConditions")
-    static boolean isValidURL(final String urlStr) {
+    static boolean isValidURL(@Nullable final String urlStr) {
         boolean validURL = false;
         if (urlStr != null && urlStr.length() > 0) {
             try {
                 new URL(urlStr);
                 validURL = true;
-            }
-            catch (MalformedURLException e) {
+            } catch (MalformedURLException e) {
                 validURL = false;
             }
         }

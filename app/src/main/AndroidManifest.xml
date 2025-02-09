@@ -1,127 +1,150 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="ly.count.android.demo">
+          package="ly.count.android.demo">
 
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
-    <application
-        android:name=".App"
-        android:allowBackup="true"
-        android:icon="@mipmap/icon"
+  <uses-permission android:name="${applicationId}.CountlyPush.BROADCAST_PERMISSION"/>
+  <uses-permission
+      android:name="android.permission.BROADCAST_CLOSE_SYSTEM_DIALOGS"
+      android:maxSdkVersion="30"/>
+
+
+  <application
+      android:name=".App"
+      android:allowBackup="false"
+      android:icon="@mipmap/icon"
+      android:label="@string/app_name"
+      android:theme="@style/AppTheme">
+    <activity
+        android:name=".MainActivity"
         android:label="@string/app_name"
-        android:theme="@style/AppTheme">
-        <activity
-            android:name=".MainActivity"
-            android:label="@string/app_name"
-            android:configChanges="orientation|screenSize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
+        android:configChanges="orientation|screenSize"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
 
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
 
-            <intent-filter android:label="@string/deep_link">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
+    <service
+        android:name=".DemoFirebaseMessagingService"
+        android:exported="false">
+      <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+      </intent-filter>
+    </service>
 
-                <!-- Accepts URIs that begin with "countly://test” -->
-                <!-- test with adb shell am start -a android.intent.action.VIEW -d "countly://test" ly.count.android.demo  -->
-                <data android:scheme="countly"
-                      android:host="test" />
+    <!--
+    <service
+        android:name=".DemoHuaweiMessagingService"
+        android:exported="false">
+        <intent-filter>
+            <action android:name="com.huawei.push.action.MESSAGING_EVENT" />
+        </intent-filter>
+    </service>
+-->
+    <activity
+        android:name=".ActivityExampleAPM"
+        android:label="@string/activity_name_apm"
+        android:configChanges="orientation|screenSize"/>
 
-            </intent-filter>
-        </activity>
+    <activity
+        android:name=".ActivityExampleCrashReporting"
+        android:label="@string/activity_name_crash_reporting"
+        android:configChanges="orientation|screenSize"/>
 
-        <service android:name=".DemoFirebaseMessagingService">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
+    <activity
+        android:name=".ActivityExampleCustomEvents"
+        android:label="@string/activity_name_custom_events"
+        android:configChanges="orientation|screenSize"/>
 
-        <activity
-            android:name=".ActivityExampleAPM"
-            android:label="@string/activity_name_apm"
-            android:configChanges="orientation|screenSize">
-        </activity>
+    <activity
+        android:name=".ActivityExampleMultiThreading"
+        android:label="@string/activity_name_multithreading"
+        android:configChanges="orientation|screenSize"/>
 
-        <activity
-            android:name=".ActivityExampleCrashReporting"
-            android:label="@string/activity_name_crash_reporting"
-            android:configChanges="orientation|screenSize">
-        </activity>
+    <activity
+        android:name=".ActivityExampleOthers"
+        android:label="@string/activity_name_others"
+        android:configChanges="orientation|screenSize"/>
 
-        <activity
-            android:name=".ActivityExampleCustomEvents"
-            android:label="@string/activity_name_custom_events"
-            android:configChanges="orientation|screenSize">
-        </activity>
+    <activity
+        android:name=".ActivityExampleUserDetails"
+        android:label="@string/activity_name_user_detail"
+        android:configChanges="orientation|screenSize"/>
 
-        <activity
-            android:name=".ActivityExampleMultiThreading"
-            android:label="@string/activity_name_multithreading"
-            android:configChanges="orientation|screenSize">
-        </activity>
+    <activity
+        android:name=".ActivityExampleViewTracking"
+        android:label="@string/activity_name_view_tracking"
+        android:configChanges="orientation|screenSize"/>
 
-        <activity
-            android:name=".ActivityExampleOthers"
-            android:label="@string/activity_name_others"
-            android:configChanges="orientation|screenSize">
-        </activity>
+    <activity
+        android:name=".ActivityExampleAutoViewTracking"
+        android:label="Multiple view tracking options"
+        android:configChanges="orientation|screenSize"/>
 
-        <activity
-            android:name=".ActivityExampleUserDetails"
-            android:label="@string/activity_name_user_detail"
-            android:configChanges="orientation|screenSize">
-        </activity>
+    <activity
+        android:name=".ActivityExampleRemoteConfig"
+        android:label="@string/activity_name_remote_config"
+        android:configChanges="orientation|screenSize"/>
+    <activity
+        android:name=".ActivityExampleDeviceId"
+        android:label="@string/activity_name_device_id"
+        android:configChanges="orientation|screenSize"/>
 
-        <activity
-            android:name=".ActivityExampleViewTracking"
-            android:label="@string/activity_name_view_tracking"
-            android:configChanges="orientation|screenSize">
-        </activity>
+    <activity
+        android:name=".ActivityExampleFeedback"
+        android:label="@string/activity_name_feedback"
+        android:configChanges="orientation|screenSize"/>
 
-        <activity
-            android:name=".ActivityExampleRemoteConfig"
-            android:label="@string/activity_name_remote_config"
-            android:configChanges="orientation|screenSize">
-        </activity>
-        <activity
-            android:name=".ActivityExampleDeviceId"
-            android:label="@string/activity_name_device_id"
-            android:configChanges="orientation|screenSize">
-        </activity>
+    <activity
+        android:name=".ActivityExampleTests"
+        android:exported="false"/>
 
-        <activity
-            android:name=".ActivityExampleRatings"
-            android:label="@string/activity_name_device_id"
-            android:configChanges="orientation|screenSize">
-        </activity>
+    <activity
+        android:name=".ActivityExampleDeepLinkA"
+        android:label="Deep link A"
+        android:configChanges="orientation|screenSize"
+        android:exported="true">
 
-        <service android:name="org.openudid.OpenUDID_service" android:exported="false">
-            <intent-filter>
-                <action android:name="org.OpenUDID.GETUDID" />
-            </intent-filter>
-        </service>
+      <intent-filter android:label="@string/deep_link">
+        <action android:name="android.intent.action.VIEW"/>
 
-        <receiver android:name="ly.count.android.sdk.ReferrerReceiver" android:exported="true">
-            <intent-filter>
-                <action android:name="com.android.vending.INSTALL_REFERRER" />
-            </intent-filter>
-        </receiver>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
 
-        <activity
-            android:name=".AnotherActivity"
-            android:label="@string/title_activity_another"
-            android:parentActivityName=".MainActivity"
-            android:theme="@style/AppTheme.NoActionBar"
-            android:configChanges="orientation|screenSize">
-            <meta-data
-                android:name="android.support.PARENT_ACTIVITY"
-                android:value="ly.count.android.demo.MainActivity" />
-        </activity>
+        <!-- Accepts URIs that begin with "countly://sample_a” -->
+        <!-- test with adb shell am start -a android.intent.action.VIEW -d "countly://test" ly.count.android.demo  -->
+        <data
+            android:scheme="countly"
+            android:host="sample_a"/>
+      </intent-filter>
+    </activity>
 
-    </application>
+    <activity
+        android:name=".ActivityExampleDeepLinkB"
+        android:label="Deep link B"
+        android:configChanges="orientation|screenSize"
+        android:exported="true">
+
+      <intent-filter android:label="@string/deep_link">
+        <action android:name="android.intent.action.VIEW"/>
+
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+
+        <!-- Accepts URIs that begin with "countly://sample_b” -->
+        <!-- test with adb shell am start -a android.intent.action.VIEW -d "countly://test" ly.count.android.demo  -->
+        <data
+            android:scheme="countly"
+            android:host="sample_b"/>
+      </intent-filter>
+    </activity>
+    <activity android:name=".ActivityExampleKotlin"/>
+  </application>
 
 </manifest>

@@ -1,21 +1,17 @@
 package ly.count.android.sdk;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
-
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import java.util.ArrayList;
-import java.util.List;
-
 @RunWith(AndroidJUnit4.class)
 public class UtilsNetworkingTest {
 
     @Before
-    public void setUp(){
+    public void setUp() {
         Countly.sharedInstance().setLoggingEnabled(true);
     }
 
@@ -38,9 +34,9 @@ public class UtilsNetworkingTest {
 
     @Test
     public void testEncodeDecode() {
-        String [] list = new String[]{"132", "āšēŗŗ", "&#(%^$(&#^@$%$&!_)@(*#_$", " ds fdsf 8ds7f0d&)(^ F*(D&F%S( SD%(F"};
+        String[] list = { "132", "āšēŗŗ", "&#(%^$(&#^@$%$&!_)@(*#_$", " ds fdsf 8ds7f0d&)(^ F*(D&F%S( SD%(F" };
 
-        for (String item:list) {
+        for (String item : list) {
             Assert.assertEquals(UtilsNetworking.urlDecodeString(UtilsNetworking.urlEncodeString(item)), item);
         }
     }
@@ -62,12 +58,12 @@ public class UtilsNetworkingTest {
     }
 
     @Test
-    public void testSHA1() {
-        String[] list_a = new String[]{"435687gyhfdgfdhg784engģšģģ€»€–’€’€’€–’€’–", "908hdg234-hbFDSFSREģšņēŗ", "908hdg sfdg 234-hbFdsfg D \"\"::$#F GF !@#$%^&*()+_ fdsh fghg"};
-        String[] list_b = new String[]{"d90474888733590f3e365e03ec45dfa3c1e1013a", "37e90d1ab2a4f9288bd53d73c1c02b7981d0b9ce", "f08c160b0f4782fcef4b1c6d4f4e46fda21bfca8"};
+    public void testSHA256() {
+        String[] list_a = { "435687gyhfdgfdhg784engģšģģ€»€–’€’€’€–’€’–", "908hdg234-hbFDSFSREģšņēŗ", "908hdg sfdg 234-hbFdsfg D \"\"::$#F GF !@#$%^&*()+_ fdsh fghg" };
+        String[] list_b = { "c641f7596a2959479d66f5b1ff9d11b5aaa24c185e27a636de242fab1e19d924", "3d8ad9c4c9194e2e1be44b408849bc4bad1c2624196440d016e14217ce2d5d24", "78cb302c277088418b8c91332eac2e336f6de107f3a336ddf05333b74778b92c" };
 
         for (int a = 0; a < list_a.length; a++) {
-            Assert.assertEquals(UtilsNetworking.sha1Hash(list_a[a]), list_b[a]);
+            Assert.assertEquals(UtilsNetworking.sha256Hash(list_a[a]), list_b[a]);
         }
     }
 }

@@ -1,26 +1,21 @@
 package ly.count.android.sdk.messaging;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
-
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import ly.count.android.sdk.Countly;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import ly.count.android.sdk.Countly;
-import ly.count.android.sdk.messaging.ModulePush;
-
 @RunWith(AndroidJUnit4.class)
 public class PushTests {
 
     @Before
-    public void setUp(){
-        Countly.sharedInstance().setLoggingEnabled(true);
+    public void setUp() {
     }
 
     @After
@@ -28,7 +23,7 @@ public class PushTests {
     }
 
     @Test
-    public void decodeMessage(){
+    public void decodeMessage() {
         //{c.b=[{"t":"Button 1","l":"https:\/\/www.google111.com"},{"t":"Button 2","l":"https:\/\/www.google222.com"}], c.i=5e56ae8c80171b2dc1154f3d, c.l=https://www.google333.com, sound=default, title=112, message=rewrwer}
 
         Map<String, String> values = new HashMap<>();

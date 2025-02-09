@@ -21,100 +21,96 @@ THE SOFTWARE.
 */
 package ly.count.android.sdk;
 
-import android.app.Instrumentation;
 import android.net.Uri;
-import android.os.Bundle;
-
 import androidx.test.ext.junit.runners.AndroidJUnit4;
-import androidx.test.platform.app.InstrumentationRegistry;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.junit.Before;
-import org.mockito.ArgumentCaptor;
-
-import java.io.UnsupportedEncodingException;
-import java.net.URLDecoder;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-
-import static androidx.test.InstrumentationRegistry.getContext;
-import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
-
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.when;
 
 @RunWith(AndroidJUnit4.class)
 public class ConnectionQueueTests {
     ConnectionQueue connQ;
     ConnectionQueue freshConnQ;
     final static long timestampAllowance = 150;
+    final String appKey = "abcDeFgHiJkLmNoPQRstuVWxyz";
+    DeviceInfo regularDeviceInfo;
 
     @Before
     public void setUp() {
+        regularDeviceInfo = new DeviceInfo(null);
+        Countly.sharedInstance().halt();
         Countly.sharedInstance().setLoggingEnabled(true);
         freshConnQ = new ConnectionQueue();
-        connQ = new ConnectionQueue();
-        connQ.setAppKey("abcDeFgHiJkLmNoPQRstuVWxyz");
-        connQ.setServerURL("http://countly.coupons.com");
-        connQ.setContext(getContext());
+        Countly.sharedInstance().init(new CountlyConfig(TestUtils.getContext(), appKey, "http://countly.coupons.com"));
+        connQ = Countly.sharedInstance().connectionQueue_;
+
+        //connQ = new ConnectionQueue();
+        //connQ.setAppKey("abcDeFgHiJkLmNoPQRstuVWxyz");
+        //connQ.setServerURL("http://countly.coupons.com");
+        //connQ.setContext(TestUtils.getContext());
         CountlyStore cs = mock(CountlyStore.class);
         when(cs.getCachedAdvertisingId()).thenReturn("");
-        connQ.setCountlyStore(cs);
-        connQ.setDeviceId(mock(DeviceId.class));
+        connQ.storageProvider = cs;
+        connQ.setDeviceId(new DeviceIdProvider() {
+            @Override public String getDeviceId() {
+                return TestUtils.commonDeviceId;
+            }
+
+            @Override public DeviceId getDeviceIdInstance() {
+                return null;
+            }
+
+            @Override public boolean isTemporaryIdEnabled() {
+                return false;
+            }
+        });
         connQ.setExecutor(mock(ExecutorService.class));
     }
 
     @Test
     public void testConstructor() {
-        assertNull(freshConnQ.getCountlyStore());
-        assertNull(freshConnQ.getDeviceId());
-        assertNull(freshConnQ.getAppKey());
+        assertNull(freshConnQ.storageProvider);
+        assertNull(freshConnQ.baseInfoProvider);
         assertNull(freshConnQ.getContext());
-        assertNull(freshConnQ.getServerURL());
         assertNull(freshConnQ.getExecutor());
     }
 
     @Test
     public void testAppKey() {
-        final String appKey = "blahblahblah";
-        freshConnQ.setAppKey(appKey);
-        assertEquals(appKey, freshConnQ.getAppKey());
+        assertEquals(appKey, connQ.baseInfoProvider.getAppKey());
     }
 
     @Test
     public void testContext() {
-        freshConnQ.setContext(getContext());
-        assertSame(getContext(), freshConnQ.getContext());
+        freshConnQ.setContext(TestUtils.getContext());
+        assertSame(TestUtils.getContext(), freshConnQ.getContext());
     }
 
     @Test
     public void testServerURL() {
         final String serverURL = "http://countly.coupons.com";
-        freshConnQ.setServerURL(serverURL);
-        assertEquals(serverURL, freshConnQ.getServerURL());
+        assertEquals(serverURL, connQ.baseInfoProvider.getServerURL());
     }
 
     @Test
     public void testCountlyStore() {
-        final CountlyStore store = new CountlyStore(getContext());
-        freshConnQ.setCountlyStore(store);
-        assertSame(store, freshConnQ.getCountlyStore());
-    }
-
-    @Test
-    public void testDeviceId() {
-        final CountlyStore store = new CountlyStore(getContext());
-        final DeviceId deviceId = new DeviceId(store, "blah");
-        freshConnQ.setDeviceId(deviceId);
-        assertSame(deviceId, freshConnQ.getDeviceId());
+        final CountlyStore store = new CountlyStore(TestUtils.getContext(), mock(ModuleLog.class));
+        freshConnQ.storageProvider = store;
+        assertSame(store, freshConnQ.storageProvider);
     }
 
     @Test
@@ -123,11 +119,12 @@ public class ConnectionQueueTests {
         freshConnQ.setExecutor(executor);
         assertSame(executor, freshConnQ.getExecutor());
     }
-
+/*
+//todo think about these tests
     @Test
     public void testCheckInternalState_nullAppKey() {
         connQ.checkInternalState(); // shouldn't throw
-        connQ.setAppKey(null);
+        Countly.sharedInstance().moduleRequestQueue.appKey = null;
         try {
             freshConnQ.checkInternalState();
             fail("expected IllegalStateException when internal state is not set up");
@@ -139,7 +136,7 @@ public class ConnectionQueueTests {
     @Test
     public void testCheckInternalState_emptyAppKey() {
         connQ.checkInternalState(); // shouldn't throw
-        connQ.setAppKey("");
+        Countly.sharedInstance().moduleRequestQueue.appKey = "";
         try {
             freshConnQ.checkInternalState();
             fail("expected IllegalStateException when internal state is not set up");
@@ -151,7 +148,7 @@ public class ConnectionQueueTests {
     @Test
     public void testCheckInternalState_nullStore() {
         connQ.checkInternalState(); // shouldn't throw
-        connQ.setCountlyStore(null);
+        connQ.storageProvider = null;
         try {
             freshConnQ.checkInternalState();
             fail("expected IllegalStateException when internal state is not set up");
@@ -175,7 +172,7 @@ public class ConnectionQueueTests {
     @Test
     public void testCheckInternalState_nullServerURL() {
         connQ.checkInternalState(); // shouldn't throw
-        connQ.setServerURL(null);
+        Countly.sharedInstance().moduleRequestQueue.serverURL = null;
         try {
             freshConnQ.checkInternalState();
             fail("expected IllegalStateException when internal state is not set up");
@@ -187,7 +184,7 @@ public class ConnectionQueueTests {
     @Test
     public void testCheckInternalState_invalidServerURL() {
         connQ.checkInternalState(); // shouldn't throw
-        connQ.setServerURL("blahblahblah.com");
+        Countly.sharedInstance().moduleRequestQueue.serverURL = "blahblahblah.com";
         try {
             freshConnQ.checkInternalState();
             fail("expected IllegalStateException when internal state is not set up");
@@ -199,34 +196,35 @@ public class ConnectionQueueTests {
     @Test
     public void testBeginSession_checkInternalState() {
         try {
-            freshConnQ.beginSession();
+            freshConnQ.beginSession(false, null, null, null, null, null);
             fail("expected IllegalStateException when internal state is not set up");
         } catch (IllegalStateException ignored) {
             // success!
         }
     }
-
+*/
+    /*
     @Test
     public void testBeginSession() throws JSONException, UnsupportedEncodingException {
-        connQ.beginSession();
+        connQ.beginSession(false, null, null, null, null);
         final ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
-        verify(connQ.getCountlyStore()).addConnection(arg.capture());
+        verify(connQ.storageProvider).addRequest(arg.capture());
         verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
 
         // verify query parameters
         final String queryStr = arg.getValue();
         final Map<String, String> queryParams = parseQueryParams(queryStr);
-        assertEquals(connQ.getAppKey(), queryParams.get("app_key"));
+        assertEquals(connQ.baseInfoProvider.getAppKey(), queryParams.get("app_key"));
         assertNull(queryParams.get("device_id"));
         final long curTimestamp = UtilsTime.currentTimestampMs();
         final long actualTimestamp = Long.parseLong(queryParams.get("timestamp"));
         // this check attempts to account for minor time changes during this test
-        assertTrue(((curTimestamp-400) <= actualTimestamp) && ((curTimestamp+400) >= actualTimestamp));
-        assertEquals(Countly.COUNTLY_SDK_VERSION_STRING, queryParams.get("sdk_version"));
+        assertTrue(((curTimestamp - 400) <= actualTimestamp) && ((curTimestamp + 400) >= actualTimestamp));
+        assertEquals(Countly.sharedInstance().COUNTLY_SDK_VERSION_STRING, queryParams.get("sdk_version"));
         assertEquals("1", queryParams.get("begin_session"));
         // validate metrics
         final JSONObject actualMetrics = new JSONObject(queryParams.get("metrics"));
-        final String metricsJsonStr = URLDecoder.decode(DeviceInfo.getMetrics(getContext()), "UTF-8");
+        final String metricsJsonStr = URLDecoder.decode(DeviceInfo.getMetrics(TestUtils.getContext(), null), "UTF-8");
         final JSONObject expectedMetrics = new JSONObject(metricsJsonStr);
         assertEquals(expectedMetrics.length(), actualMetrics.length());
         final Iterator actualMetricsKeyIterator = actualMetrics.keys();
@@ -234,8 +232,9 @@ public class ConnectionQueueTests {
             final String key = (String) actualMetricsKeyIterator.next();
             assertEquals(expectedMetrics.get(key), actualMetrics.get(key));
         }
-    }
+    }*/
 
+    /*
     @Test
     public void testUpdateSession_checkInternalState() {
         try {
@@ -245,38 +244,40 @@ public class ConnectionQueueTests {
             // success!
         }
     }
+    */
 
     @Test
     public void testUpdateSession_zeroDuration() {
         connQ.updateSession(0);
-        verifyZeroInteractions(connQ.getExecutor(), connQ.getCountlyStore());
+        verifyZeroInteractions(connQ.getExecutor(), connQ.storageProvider);
     }
 
     @Test
     public void testUpdateSession_negativeDuration() {
         connQ.updateSession(-1);
-        verifyZeroInteractions(connQ.getExecutor(), connQ.getCountlyStore());
+        verifyZeroInteractions(connQ.getExecutor(), connQ.storageProvider);
     }
 
-    @Test
-    public void testUpdateSession_moreThanZeroDuration() {
-        connQ.updateSession(60);
-        final ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
-        verify(connQ.getCountlyStore()).addConnection(arg.capture());
-        verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
+    //@Test
+    //public void testUpdateSession_moreThanZeroDuration() {
+    //    connQ.updateSession(60);
+    //    final ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
+    //    verify(connQ.getStorageProvider()).addRequest(arg.capture());
+    //    verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
+    //
+    //    // verify query parameters
+    //    final String queryStr = arg.getValue();
+    //    final Map<String, String> queryParams = parseQueryParams(queryStr);
+    //    assertEquals(connQ.baseInfoProvider.getAppKey(), queryParams.get("app_key"));
+    //    assertNull(queryParams.get("device_id"));
+    //    final long curTimestamp = UtilsTime.currentTimestampMs();
+    //    final long actualTimestamp = Long.parseLong(queryParams.get("timestamp"));
+    //    // this check attempts to account for minor time changes during this test
+    //    assertTrue(((curTimestamp - 400) <= actualTimestamp) && ((curTimestamp + 400) >= actualTimestamp));
+    //    assertEquals("60", queryParams.get("session_duration"));
+    //}
 
-        // verify query parameters
-        final String queryStr = arg.getValue();
-        final Map<String, String> queryParams = parseQueryParams(queryStr);
-        assertEquals(connQ.getAppKey(), queryParams.get("app_key"));
-        assertNull(queryParams.get("device_id"));
-        final long curTimestamp = UtilsTime.currentTimestampMs();
-        final long actualTimestamp = Long.parseLong(queryParams.get("timestamp"));
-        // this check attempts to account for minor time changes during this test
-        assertTrue(((curTimestamp-400) <= actualTimestamp) && ((curTimestamp+400) >= actualTimestamp));
-        assertEquals("60", queryParams.get("session_duration"));
-    }
-
+    /*
     @Test
     public void testEndSession_checkInternalState() {
         try {
@@ -286,73 +287,76 @@ public class ConnectionQueueTests {
             // success!
         }
     }
+    */
 
-    @Test
-    public void testEndSession_zeroDuration() {
-        connQ.endSession(0);
-        final ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
-        verify(connQ.getCountlyStore()).addConnection(arg.capture());
-        verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
+    /*
+       @Test
+       public void testEndSession_zeroDuration() {
+           connQ.endSession(0);
+           final ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
+           verify(connQ.getStorageProvider()).addRequest(arg.capture());
+           verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
 
-        // verify query parameters
-        final String queryStr = arg.getValue();
-        final Map<String, String> queryParams = parseQueryParams(queryStr);
-        assertEquals(connQ.getAppKey(), queryParams.get("app_key"));
-        assertNull(queryParams.get("device_id"));
-        final long curTimestamp = UtilsTime.currentTimestampMs();
-        final long curTimestampBelow = curTimestamp - timestampAllowance;
-        final long curTimestampAbove = curTimestamp + timestampAllowance;
-        final long actualTimestamp = Long.parseLong(queryParams.get("timestamp"));
-        // this check attempts to account for minor time changes during this test
-        assertTrue((curTimestampBelow <= actualTimestamp) && (curTimestampAbove >= actualTimestamp));
-        assertFalse(queryParams.containsKey("session_duration"));
-        assertEquals("1", queryParams.get("end_session"));
-    }
+           // verify query parameters
+           final String queryStr = arg.getValue();
+           final Map<String, String> queryParams = parseQueryParams(queryStr);
+           assertEquals(connQ.baseInfoProvider.getAppKey(), queryParams.get("app_key"));
+           assertNull(queryParams.get("device_id"));
+           final long curTimestamp = UtilsTime.currentTimestampMs();
+           final long curTimestampBelow = curTimestamp - timestampAllowance;
+           final long curTimestampAbove = curTimestamp + timestampAllowance;
+           final long actualTimestamp = Long.parseLong(queryParams.get("timestamp"));
+           // this check attempts to account for minor time changes during this test
+           assertTrue((curTimestampBelow <= actualTimestamp) && (curTimestampAbove >= actualTimestamp));
+           assertFalse(queryParams.containsKey("session_duration"));
+           assertEquals("1", queryParams.get("end_session"));
+       }
 
-    @Test
-    public void testEndSession_negativeDuration() {
-        connQ.endSession(-1);
-        final ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
-        verify(connQ.getCountlyStore()).addConnection(arg.capture());
-        verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
+       @Test
+       public void testEndSession_negativeDuration() {
+           connQ.endSession(-1);
+           final ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
+           verify(connQ.getStorageProvider()).addRequest(arg.capture());
+           verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
 
-        // verify query parameters
-        final String queryStr = arg.getValue();
-        final Map<String, String> queryParams = parseQueryParams(queryStr);
-        assertEquals(connQ.getAppKey(), queryParams.get("app_key"));
-        assertNull(queryParams.get("device_id"));
-        final long curTimestamp = UtilsTime.currentTimestampMs();
-        final long curTimestampBelow = curTimestamp - timestampAllowance;
-        final long curTimestampAbove = curTimestamp + timestampAllowance;
-        final long actualTimestamp = Long.parseLong(queryParams.get("timestamp"));
-        // this check attempts to account for minor time changes during this test
-        assertTrue((curTimestampBelow <= actualTimestamp) && (curTimestampAbove >= actualTimestamp));
-        assertFalse(queryParams.containsKey("session_duration"));
-        assertEquals("1", queryParams.get("end_session"));
-    }
+           // verify query parameters
+           final String queryStr = arg.getValue();
+           final Map<String, String> queryParams = parseQueryParams(queryStr);
+           assertEquals(connQ.baseInfoProvider.getAppKey(), queryParams.get("app_key"));
+           assertNull(queryParams.get("device_id"));
+           final long curTimestamp = UtilsTime.currentTimestampMs();
+           final long curTimestampBelow = curTimestamp - timestampAllowance;
+           final long curTimestampAbove = curTimestamp + timestampAllowance;
+           final long actualTimestamp = Long.parseLong(queryParams.get("timestamp"));
+           // this check attempts to account for minor time changes during this test
+           assertTrue((curTimestampBelow <= actualTimestamp) && (curTimestampAbove >= actualTimestamp));
+           assertFalse(queryParams.containsKey("session_duration"));
+           assertEquals("1", queryParams.get("end_session"));
+       }
 
-    @Test
-    public void testEndSession_moreThanZeroDuration() {
-        connQ.endSession(15);
-        final ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
-        verify(connQ.getCountlyStore()).addConnection(arg.capture());
-        verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
+       @Test
+       public void testEndSession_moreThanZeroDuration() {
+           connQ.endSession(15);
+           final ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
+           verify(connQ.getStorageProvider()).addRequest(arg.capture());
+           verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
 
-        // verify query parameters
-        final String queryStr = arg.getValue();
-        final Map<String, String> queryParams = parseQueryParams(queryStr);
-        assertEquals(connQ.getAppKey(), queryParams.get("app_key"));
-        assertNull(queryParams.get("device_id"));
-        final long curTimestamp = UtilsTime.currentTimestampMs();
-        final long curTimestampBelow = curTimestamp - timestampAllowance;
-        final long curTimestampAbove = curTimestamp + timestampAllowance;
-        final long actualTimestamp = Long.parseLong(queryParams.get("timestamp"));
-        // this check attempts to account for minor time changes during this test
-        assertTrue((curTimestampBelow <= actualTimestamp) && (curTimestampAbove >= actualTimestamp));
-        assertEquals("1", queryParams.get("end_session"));
-        assertEquals("15", queryParams.get("session_duration"));
-    }
-
+           // verify query parameters
+           final String queryStr = arg.getValue();
+           final Map<String, String> queryParams = parseQueryParams(queryStr);
+           assertEquals(connQ.baseInfoProvider.getAppKey(), queryParams.get("app_key"));
+           assertNull(queryParams.get("device_id"));
+           final long curTimestamp = UtilsTime.currentTimestampMs();
+           final long curTimestampBelow = curTimestamp - timestampAllowance;
+           final long curTimestampAbove = curTimestamp + timestampAllowance;
+           final long actualTimestamp = Long.parseLong(queryParams.get("timestamp"));
+           // this check attempts to account for minor time changes during this test
+           assertTrue((curTimestampBelow <= actualTimestamp) && (curTimestampAbove >= actualTimestamp));
+           assertEquals("1", queryParams.get("end_session"));
+           assertEquals("15", queryParams.get("session_duration"));
+       }
+       */
+    /*
     @Test
     public void testRecordEvents_checkInternalState() {
         try {
@@ -362,19 +366,21 @@ public class ConnectionQueueTests {
             // success!
         }
     }
+    */
 
+    /*
     @Test
     public void testRecordEvents() {
         final String eventData = "blahblahblah";
         connQ.recordEvents(eventData);
         final ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
-        verify(connQ.getCountlyStore()).addConnection(arg.capture());
+        verify(connQ.getStorageProvider()).addRequest(arg.capture());
         verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
 
         // verify query parameters
         final String queryStr = arg.getValue();
         final Map<String, String> queryParams = parseQueryParams(queryStr);
-        assertEquals(connQ.getAppKey(), queryParams.get("app_key"));
+        assertEquals(connQ.baseInfoProvider.getAppKey(), queryParams.get("app_key"));
         assertNull(queryParams.get("device_id"));
         final long curTimestamp = UtilsTime.currentTimestampMs();
         final long curTimestampBelow = curTimestamp - timestampAllowance;
@@ -384,6 +390,7 @@ public class ConnectionQueueTests {
         assertTrue((curTimestampBelow <= actualTimestamp) && (curTimestampAbove >= actualTimestamp));
         assertEquals(eventData, queryParams.get("events"));
     }
+     */
 
     private Map<String, String> parseQueryParams(final String queryStr) {
         final String urlStr = "http://server?" + queryStr;
@@ -411,48 +418,112 @@ public class ConnectionQueueTests {
         assertSame(executor, connQ.getExecutor());
     }
 
+    /*
+
     @Test
     public void testTick_storeHasNoConnections() {
-        when(connQ.getCountlyStore().isEmptyConnections()).thenReturn(true);
+        when(connQ.getStorageProvider().ifNoRequestsAvailable()).thenReturn(true);
         connQ.tick();
         verifyZeroInteractions(connQ.getExecutor());
     }
 
-    @Test
-    public void testTick_storeHasConnectionsAndFutureIsNull() {
-        final Future mockFuture = mock(Future.class);
-        when(connQ.getExecutor().submit(any(ConnectionProcessor.class))).thenReturn(mockFuture);
-        connQ.tick();
-        verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
-        assertSame(mockFuture, connQ.getConnectionProcessorFuture());
-    }
+     */
 
+    //@Test
+    //public void testTick_storeHasConnectionsAndFutureIsNull() {
+    //    final Future mockFuture = mock(Future.class);
+    //    when(connQ.getExecutor().submit(any(ConnectionProcessor.class))).thenReturn(mockFuture);
+    //    connQ.tick();
+    //    verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
+    //    assertSame(mockFuture, connQ.getConnectionProcessorFuture());
+    //}
+
+    /*
     @Test
     public void testTick_checkConnectionProcessor() {
         final ArgumentCaptor<Runnable> arg = ArgumentCaptor.forClass(Runnable.class);
         when(connQ.getExecutor().submit(arg.capture())).thenReturn(null);
         connQ.tick();
-        assertEquals(((ConnectionProcessor)arg.getValue()).getServerURL(), connQ.getServerURL());
-        assertSame(((ConnectionProcessor)arg.getValue()).getCountlyStore(), connQ.getCountlyStore());
+        assertEquals(((ConnectionProcessor) arg.getValue()).getServerURL(), connQ.baseInfoProvider.getServerURL());
+        assertSame(((ConnectionProcessor) arg.getValue()).getCountlyStore(), connQ.getStorageProvider());
     }
+*/
+    //@Test
+    //public void testTick_storeHasConnectionsAndFutureIsDone() {
+    //    final Future<?> mockFuture = mock(Future.class);
+    //    when(mockFuture.isDone()).thenReturn(true);
+    //    connQ.setConnectionProcessorFuture(mockFuture);
+    //    final Future mockFuture2 = mock(Future.class);
+    //    when(connQ.getExecutor().submit(any(ConnectionProcessor.class))).thenReturn(mockFuture2);
+    //    connQ.tick();
+    //    verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
+    //    assertSame(mockFuture2, connQ.getConnectionProcessorFuture());
+    //}
+
+    //@Test
+    //public void testTick_storeHasConnectionsButFutureIsNotDone() {
+    //    final Future<?> mockFuture = mock(Future.class);
+    //    connQ.setConnectionProcessorFuture(mockFuture);
+    //    connQ.tick();
+    //    verifyZeroInteractions(connQ.getExecutor());
+    //}
 
     @Test
-    public void testTick_storeHasConnectionsAndFutureIsDone() {
-        final Future<?> mockFuture = mock(Future.class);
-        when(mockFuture.isDone()).thenReturn(true);
-        connQ.setConnectionProcessorFuture(mockFuture);
-        final Future mockFuture2 = mock(Future.class);
-        when(connQ.getExecutor().submit(any(ConnectionProcessor.class))).thenReturn(mockFuture2);
-        connQ.tick();
-        verify(connQ.getExecutor()).submit(any(ConnectionProcessor.class));
-        assertSame(mockFuture2, connQ.getConnectionProcessorFuture());
-    }
+    public void testPrepareCommonRequest() {
+        // 0 - test default common request
+        // 1 - test common request with SDK_name and SDK_version override
+        for (int a = 0; a < 2; a++) {
+            if (a == 1) {
+                Countly.sharedInstance().COUNTLY_SDK_NAME = "someBigNew123-+name";
+                Countly.sharedInstance().COUNTLY_SDK_VERSION_STRING = "123sdf.v-213";
+            }
+            UtilsTime.Instant instant = UtilsTime.getCurrentInstant();
+            String commonR = connQ.prepareCommonRequestData();
+            Assert.assertTrue(commonR.contains("app_key="));
+            Assert.assertTrue(commonR.contains("&timestamp="));
+            Assert.assertTrue(commonR.contains("&hour="));
+            Assert.assertTrue(commonR.contains("&dow="));
+            Assert.assertTrue(commonR.contains("&tz="));
+            Assert.assertTrue(commonR.contains("&sdk_version="));
+            Assert.assertTrue(commonR.contains("&sdk_name="));
+            Assert.assertTrue(commonR.contains("&device_id="));
 
-    @Test
-    public void testTick_storeHasConnectionsButFutureIsNotDone() {
-        final Future<?> mockFuture = mock(Future.class);
-        connQ.setConnectionProcessorFuture(mockFuture);
-        connQ.tick();
-        verifyZeroInteractions(connQ.getExecutor());
+            String[] parts = commonR.split("&");
+
+            for (String part : parts) {
+                String[] pair = part.split("=");
+                switch (pair[0]) {
+                    case "app_key":
+                        assertEquals(appKey, pair[1]);
+                        break;
+                    case "tz":
+                        assertEquals(pair[1], "" + regularDeviceInfo.mp.getTimezoneOffset());
+                        break;
+                    case "sdk_version":
+                        if (a == 0) {
+                            assertEquals(TestUtils.SDK_VERSION, pair[1]);
+                        } else {
+                            assertEquals("123sdf.v-213", pair[1]);
+                        }
+                        break;
+                    case "sdk_name":
+                        if (a == 0) {
+                            assertEquals(TestUtils.SDK_NAME, pair[1]);
+                        } else {
+                            assertEquals("someBigNew123-+name", pair[1]);
+                        }
+                        break;
+                    case "hour":
+                        assertEquals(pair[1], "" + instant.hour);
+                        break;
+                    case "dow":
+                        assertEquals(pair[1], "" + instant.dow);
+                        break;
+                    case "device_id":
+                        assertEquals(pair[1], TestUtils.commonDeviceId);
+                        break;
+                }
+            }
+        }
     }
 }

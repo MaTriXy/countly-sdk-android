@@ -22,15 +22,19 @@ THE SOFTWARE.
 package ly.count.android.sdk;
 
 import android.content.Context;
-import android.util.Log;
-
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * ConnectionQueue queues session and event data and periodically sends that data to
@@ -40,27 +44,39 @@ import javax.net.ssl.TrustManager;
  * controlled by the Countly singleton, which is synchronized.
  *
  * NOTE: This class is only public to facilitate unit testing, because
- *       of this bug in dexmaker: https://code.google.com/p/dexmaker/issues/detail?id=34
+ * of this bug in dexmaker: https://code.google.com/p/dexmaker/issues/detail?id=34
  */
-public class ConnectionQueue {
-    private CountlyStore store_;
+class ConnectionQueue implements RequestQueueProvider {
     private ExecutorService executor_;
-    private String appKey_;
     private Context context_;
-    private String serverURL_;
     private Future<?> connectionProcessorFuture_;
-    private DeviceId deviceId_;
+    private DeviceIdProvider deviceIdProvider_;
     private SSLContext sslContext_;
+    BaseInfoProvider baseInfoProvider;
+    HealthTracker healthTracker;
+    public PerformanceCounterCollector pcc;
 
     private Map<String, String> requestHeaderCustomValues;
+    Map<String, String> metricOverride = null;
 
-    // Getters are for unit testing
-    String getAppKey() {
-        return appKey_;
+    protected ModuleLog L;
+    protected ConsentProvider consentProvider;//link to the consent module
+    protected ModuleRequestQueue moduleRequestQueue = null;//todo remove in the future
+    protected DeviceInfo deviceInfo = null;//todo ?remove in the future?
+    StorageProvider storageProvider;
+    ConfigurationProvider configProvider;
+    RequestInfoProvider requestInfoProvider;
+
+    void setBaseInfoProvider(BaseInfoProvider bip) {
+        baseInfoProvider = bip;
     }
 
-    void setAppKey(final String appKey) {
-        appKey_ = appKey;
+    void setStorageProvider(StorageProvider sp) {
+        storageProvider = sp;
+    }
+
+    StorageProvider getStorageProvider() {
+        return storageProvider;
     }
 
     Context getContext() {
@@ -71,13 +87,7 @@ public class ConnectionQueue {
         context_ = context;
     }
 
-    String getServerURL() {
-        return serverURL_;
-    }
-
-    void setServerURL(final String serverURL) {
-        serverURL_ = serverURL;
-
+    void setupSSLContext() {
         if (Countly.publicKeyPinCertificates == null && Countly.certificatePinCertificates == null) {
             sslContext_ = null;
         } else {
@@ -91,403 +101,511 @@ public class ConnectionQueue {
         }
     }
 
-    CountlyStore getCountlyStore() {
-        return store_;
+    public void setDeviceId(DeviceIdProvider deviceIdProvider) {
+        this.deviceIdProvider_ = deviceIdProvider;
     }
 
-    void setCountlyStore(final CountlyStore countlyStore) {
-        store_ = countlyStore;
-    }
-
-    DeviceId getDeviceId() { return deviceId_; }
-
-    public void setDeviceId(DeviceId deviceId) {
-        this.deviceId_ = deviceId;
-    }
-
-    public void setRequestHeaderCustomValues(Map<String, String> headerCustomValues){
+    protected void setRequestHeaderCustomValues(Map<String, String> headerCustomValues) {
         requestHeaderCustomValues = headerCustomValues;
+    }
+
+    protected void setMetricOverride(Map<String, String> metricOverride) {
+        if (L.logEnabled()) {
+            if (metricOverride != null) {
+                L.d("[Connection Queue] The following metric overrides are set:");
+
+                for (String k : metricOverride.keySet()) {
+                    L.d("[Connection Queue] key[" + k + "] val[" + metricOverride.get(k) + "]");
+                }
+            } else {
+                L.d("[Connection Queue] No metric override is provided");
+            }
+        }
+        this.metricOverride = metricOverride;
     }
 
     /**
      * Checks internal state and throws IllegalStateException if state is invalid to begin use.
+     *
      * @throws IllegalStateException if context, app key, store, or server URL have not been set
      */
-    void checkInternalState() {
+    boolean checkInternalState() {
+        //todo enable later
+        //assert context_ != null;
+        //assert baseInfoProvider.getAppKey() != null;
+        //assert baseInfoProvider.getAppKey().length() != 0;
+        //assert baseInfoProvider.getServerURL() != null;
+        //assert UtilsNetworking.isValidURL(baseInfoProvider.getServerURL());
+        //assert storageProvider != null;
+        //assert Countly.publicKeyPinCertificates != null && baseInfoProvider.getServerURL().startsWith("https");
+
         if (context_ == null) {
-            throw new IllegalStateException("context has not been set");
+            if (L != null) {
+                L.e("[Connection Queue] context has not been set");
+            }
+            return false;
         }
-        if (appKey_ == null || appKey_.length() == 0) {
-            throw new IllegalStateException("app key has not been set");
+        if (baseInfoProvider.getAppKey() == null || baseInfoProvider.getAppKey().length() == 0) {
+            if (L != null) {
+                L.e("[Connection Queue] app key has not been set");
+            }
+            return false;
         }
-        if (store_ == null) {
-            throw new IllegalStateException("countly store has not been set");
+        if (storageProvider == null) {
+            if (L != null) {
+                L.e("[Connection Queue] countly storage provider has not been set");
+            }
+            return false;
         }
-        if (serverURL_ == null || !UtilsNetworking.isValidURL(serverURL_)) {
-            throw new IllegalStateException("server URL is not valid");
+        if (baseInfoProvider.getServerURL() == null || !UtilsNetworking.isValidURL(baseInfoProvider.getServerURL())) {
+            if (L != null) {
+                L.e("[Connection Queue] server URL is not valid");
+            }
+            return false;
         }
-        if (Countly.publicKeyPinCertificates != null && !serverURL_.startsWith("https")) {
-            throw new IllegalStateException("server must start with https once you specified public keys");
+        if (Countly.publicKeyPinCertificates != null && !baseInfoProvider.getServerURL().startsWith("https")) {
+            if (L != null) {
+                L.e("[Connection Queue] server must start with https once you specified public keys");
+            }
+            return false;
         }
+
+        return true;
     }
 
     /**
      * Records a session start event for the app and sends it to the server.
+     *
      * @throws IllegalStateException if context, app key, store, or server URL have not been set
      */
-    void beginSession() {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] beginSession");
+    public void beginSession(boolean locationDisabled, @Nullable String locationCountryCode, @Nullable String locationCity, @Nullable String locationGpsCoordinates, @Nullable String locationIpAddress, @NonNull String preparedMetrics) {
+        if (!checkInternalState()) {
+            return;
+        }
+        L.d("[Connection Queue] beginSession");
+
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.sessions)) {
+            L.d("[Connection Queue] request ignored, 'sessions' consent not given");
+            return;
         }
 
-        boolean dataAvailable = false;//will only send data if there is something valuable to send
         String data = prepareCommonRequestData();
 
-        if(Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.sessions)) {
-            //add session data if consent given
-            data += "&begin_session=1"
-                    + "&metrics=" + DeviceInfo.getMetrics(context_);//can be only sent with begin session
-            dataAvailable = true;
-        }
+        //add session data if consent given
+        data += "&begin_session=1"
+            + "&metrics=" + preparedMetrics;//can be only sent with begin session
 
-        CountlyStore cs = getCountlyStore();
-        String locationData = prepareLocationData(cs, true);
-
-        if(!locationData.isEmpty()){
+        String locationData = prepareLocationData(locationDisabled, locationCountryCode, locationCity, locationGpsCoordinates, locationIpAddress);
+        if (!locationData.isEmpty()) {
             data += locationData;
-            dataAvailable = true;
-        }
-
-        if(Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.attribution)) {
-            //add attribution data if consent given
-            if (Countly.sharedInstance().isAttributionEnabled) {
-                String cachedAdId = store_.getCachedAdvertisingId();
-
-                if (!cachedAdId.isEmpty()) {
-                    data += "&aid=" + UtilsNetworking.urlEncodeString("{\"adid\":\"" + cachedAdId + "\"}");
-
-                    dataAvailable = true;
-                }
-            }
         }
 
         Countly.sharedInstance().isBeginSessionSent = true;
 
-        if(dataAvailable) {
-            store_.addConnection(data);
-            tick();
+        addRequestToQueue(data, false);
+        tick();
+    }
+
+    /**
+     * Enrolls the user for given keys
+     *
+     * @throws IllegalStateException if context, app key, store, or server URL have not been set
+     */
+    public void enrollToKeys(@NonNull String[] keys) {
+        if (!checkInternalState()) {
+            return;
         }
+        L.d("[Connection Queue] enrollToKeys");
+
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.remoteConfig)) {
+            L.d("[Connection Queue] request ignored, 'remoteConfig' consent not given");
+            return;
+        }
+
+        String data = prepareCommonRequestDataShort()
+            + "&method=ab"
+            + "&keys=" + UtilsNetworking.encodedArrayBuilder(keys)
+            + "&new_end_point=/o/sdk";
+
+        addRequestToQueue(data, false);
+        tick();
+    }
+
+    /**
+     * Exits/removes the user for given keys from A/B tests
+     *
+     * @throws IllegalStateException if context, app key, store, or server URL have not been set
+     */
+    public void exitForKeys(@NonNull String[] keys) {
+        if (!checkInternalState()) {
+            return;
+        }
+        L.d("[Connection Queue] exitForKeys");
+
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.remoteConfig)) {
+            L.d("[Connection Queue] request ignored, 'remoteConfig' consent not given");
+            return;
+        }
+
+        String data = prepareCommonRequestDataShort()
+            + "&method=ab_opt_out";
+
+        if (keys.length > 0) { // exits all otherwise
+            data += "&keys=" + UtilsNetworking.encodedArrayBuilder(keys);
+        }
+
+        addRequestToQueue(data, false);
+        tick();
     }
 
     /**
      * Records a session duration event for the app and sends it to the server. This method does nothing
      * if passed a negative or zero duration.
+     *
      * @param duration duration in seconds to extend the current app session, should be more than zero
      * @throws IllegalStateException if context, app key, store, or server URL have not been set
      */
-    void updateSession(final int duration) {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] updateSession");
+    public void updateSession(final int duration) {
+        if (!checkInternalState()) {
+            return;
         }
+        L.d("[Connection Queue] updateSession");
 
-        if (duration > 0) {
-            boolean dataAvailable = false;//will only send data if there is something valuable to send
-            String data = prepareCommonRequestData();
-
-            if(Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.sessions)) {
-                data += "&session_duration=" + duration;
-                dataAvailable = true;
-            }
-
-            if(Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.attribution)) {
-                if (Countly.sharedInstance().isAttributionEnabled) {
-                    String cachedAdId = store_.getCachedAdvertisingId();
-
-                    if (!cachedAdId.isEmpty()) {
-                        data += "&aid=" + UtilsNetworking.urlEncodeString("{\"adid\":\"" + cachedAdId + "\"}");
-                        dataAvailable = true;
-                    }
-                }
-            }
-
-            if(dataAvailable) {
-                store_.addConnection(data);
-                tick();
-            }
-        }
-    }
-
-    public void changeDeviceId (String deviceId, final int duration) {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] changeDeviceId");
-        }
-
-        if(!Countly.sharedInstance().anyConsentGiven()){
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Connection Queue] request ignored, consent not given");
-            }
-            //no consent set, aborting
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.sessions)) {
+            L.d("[Connection Queue] request ignored, 'sessions' consent not given");
             return;
         }
 
-        String data = prepareCommonRequestData();
-
-        if(Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.sessions)) {
+        if (duration > 0) {
+            String data = prepareCommonRequestData();
             data += "&session_duration=" + duration;
+
+            addRequestToQueue(data, false);
+            tick();
         }
+    }
 
-        // !!!!! THIS SHOULD ALWAYS BE ADDED AS THE LAST FIELD, OTHERWISE MERGING BREAKS !!!!!
-        data += "&device_id=" + UtilsNetworking.urlEncodeString(deviceId);
+    public void changeDeviceId(String deviceId, String oldDeviceId) {
+        if (!checkInternalState()) {
+            return;
+        }
+        L.d("[Connection Queue] changeDeviceId");
 
-        store_.addConnection(data);
+        String data = prepareCommonRequestData(deviceId);
+
+        data += "&old_device_id=" + UtilsNetworking.urlEncodeString(oldDeviceId);
+
+        addRequestToQueue(data, false);
         tick();
     }
 
-    public void tokenSession(String token, Countly.CountlyMessagingMode mode) {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] tokenSession");
+    public void tokenSession(String token, Countly.CountlyMessagingProvider provider) {
+        if (!checkInternalState()) {
+            return;
         }
+        L.d("[Connection Queue] tokenSession");
 
-        if(!Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.push)){
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Connection Queue] request ignored, consent not given");
-            }
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.push)) {
+            L.d("[Connection Queue] request ignored, 'push' consent not given");
             return;
         }
 
         final String data = prepareCommonRequestData()
-                + "&token_session=1"
-                + "&android_token=" + token
-                + "&test_mode=" + (mode == Countly.CountlyMessagingMode.TEST ? 2 : 0)
-                + "&locale=" + DeviceInfo.getLocale();
+            + "&token_session=1"
+            + "&android_token=" + UtilsNetworking.urlEncodeString(token)
+            + "&token_provider=" + provider
+            + "&locale=" + UtilsNetworking.urlEncodeString(deviceInfo.mp.getLocale());
 
-        store_.addConnection(data);
-        tick();
+        L.d("[Connection Queue] Waiting for 10 seconds before adding token request to queue");
+
+        // To ensure begin_session will be fully processed by the server before token_session
+        final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
+        worker.schedule(new Runnable() {
+            @Override
+            public void run() {
+                L.d("[Connection Queue] Finished waiting 10 seconds adding token request");
+                addRequestToQueue(data, false);
+                tick();
+            }
+        }, 10, TimeUnit.SECONDS);
     }
 
     /**
      * Records a session end event for the app and sends it to the server. Duration is only included in
      * the session end event if it is more than zero.
+     *
      * @param duration duration in seconds to extend the current app session
      * @throws IllegalStateException if context, app key, store, or server URL have not been set
      */
-    void endSession(final int duration) {
-        endSession(duration, null);
-    }
-
-    void endSession(final int duration, String deviceIdOverride) {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] endSession");
+    public void endSession(final int duration) {
+        if (!checkInternalState()) {
+            return;
         }
+        L.d("[Connection Queue] endSession");
 
-        boolean dataAvailable = false;//will only send data if there is something valuable to send
         String data = prepareCommonRequestData();
 
-        if(Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.sessions)) {
-            data += "&end_session=1";
-            if (duration > 0) {
-                data += "&session_duration=" + duration;
-            }
-            dataAvailable = true;
+        data += "&end_session=1";
+        if (duration > 0) {
+            data += "&session_duration=" + duration;
         }
 
-        if (deviceIdOverride != null && Countly.sharedInstance().anyConsentGiven()) {
-            //if no consent is given, device ID override is not sent
-            data += "&override_id=" + UtilsNetworking.urlEncodeString(deviceIdOverride);
-            dataAvailable = true;
-        }
-
-        if(dataAvailable) {
-            store_.addConnection(data);
-            tick();
-        }
+        addRequestToQueue(data, false);
+        tick();
     }
 
     /**
      * Send user location
      */
-    void sendLocation() {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] sendLocation");
+    public void sendLocation(boolean locationDisabled, String locationCountryCode, String locationCity, String locationGpsCoordinates, String locationIpAddress) {
+        if (!checkInternalState()) {
+            return;
         }
+        L.d("[Connection Queue] sendLocation");
 
         String data = prepareCommonRequestData();
 
-        CountlyStore cs = getCountlyStore();
-        data += prepareLocationData(cs, true);
+        data += prepareLocationData(locationDisabled, locationCountryCode, locationCity, locationGpsCoordinates, locationIpAddress);
 
-        store_.addConnection(data);
+        addRequestToQueue(data, false);
 
         tick();
     }
 
     /**
      * Send user data to the server.
+     *
      * @throws java.lang.IllegalStateException if context, app key, store, or server URL have not been set
      */
-    void sendUserData() {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] sendUserData");
+    public void sendUserData(String userdata) {
+        if (!checkInternalState()) {
+            return;
         }
+        L.d("[Connection Queue] sendUserData");
 
-        if(!Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.users)){
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Connection Queue] request ignored, consent not given");
-            }
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.users)) {
+            L.d("[Connection Queue] request ignored, 'users' consent not given");
             return;
         }
 
-        String userdata = UserData.getDataForRequest();
-
-        if(!userdata.equals("")){
-            String data = prepareCommonRequestData()
-                    + userdata;
-            store_.addConnection(data);
-
-            tick();
-        }
+        String data = prepareCommonRequestData() + userdata;
+        addRequestToQueue(data, false);
+        tick();
     }
 
-    /**
-     * Attribute installation to Countly server.
-     * @param referrer query parameters
-     * @throws java.lang.IllegalStateException if context, app key, store, or server URL have not been set
-     */
-    void sendReferrerData(String referrer) {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] checkInternalState");
+    public void sendIndirectAttribution(@NonNull String attributionObj) {
+        if (!checkInternalState()) {
+            return;
         }
+        L.d("[Connection Queue] sendIndirectAttribution");
 
-        if(!Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.attribution)) {
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Connection Queue] request ignored, consent not given");
-            }
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.attribution)) {
+            L.d("[Connection Queue] request ignored, 'attribution' consent not given");
             return;
         }
 
-        if(referrer != null){
-            String data = prepareCommonRequestData()
-                    + referrer;
-            store_.addConnection(data);
-
-            tick();
+        if (attributionObj.isEmpty()) {
+            L.e("[Connection Queue] provided attribution ID is not valid, aborting");
+            return;
         }
+
+        String param = "&aid=" + UtilsNetworking.urlEncodeString(attributionObj);
+
+        String data = prepareCommonRequestData() + param;
+        addRequestToQueue(data, false);
+
+        tick();
     }
 
-    /**
-     * Reports a crash with device data to the server.
-     * @throws IllegalStateException if context, app key, store, or server URL have not been set
-     */
-    void sendCrashReport(String error, boolean nonfatal, boolean isNativeCrash) {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] sendCrashReport");
+    public void sendDirectAttributionTest(@NonNull String attributionData) {
+        if (!checkInternalState()) {
+            return;
         }
+        L.d("[Connection Queue] sendDirectAttributionTest");
 
-        if(!Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.crashes)){
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Connection Queue] request ignored, consent not given");
-            }
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.attribution)) {
+            L.d("[Connection Queue] request ignored, 'attribution' consent not given");
             return;
         }
 
-        //limit the size of the crash report to 20k characters
-        if(!isNativeCrash) {
-            error = error.substring(0, Math.min(20000, error.length()));
+        if (attributionData.isEmpty()) {
+            L.w("[Connection Queue] sendDirectAttributionTest, attribution not sent, data is empty");
+            return;
         }
 
-        final String data = prepareCommonRequestData()
-                          + "&crash=" + UtilsNetworking.urlEncodeString(CrashDetails.getCrashData(context_, error, nonfatal, isNativeCrash));
+        String res = "&attribution_data=" + UtilsNetworking.urlEncodeString(attributionData);
 
-        store_.addConnection(data);
+        String data = prepareCommonRequestData() + res;
+        addRequestToQueue(data, false);
+
+        tick();
+    }
+
+    public void sendDirectAttributionLegacy(@NonNull String campaignID, @Nullable String userID) {
+        if (!checkInternalState()) {
+            return;
+        }
+        L.d("[Connection Queue] sendDirectAttributionLegacy");
+
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.attribution)) {
+            L.d("[Connection Queue] request ignored, 'attribution' consent not given");
+            return;
+        }
+
+        String res = "";
+
+        if (!campaignID.isEmpty()) {
+            res += "&campaign_id=" + UtilsNetworking.urlEncodeString(campaignID);
+        }
+        if (userID != null && !userID.isEmpty()) {
+            res += "&campaign_user=" + UtilsNetworking.urlEncodeString(userID);
+        }
+
+        if (res.length() == 0) {
+            L.w("[Connection Queue] sendDirectAttributionLegacy, attribution not sent, both campaign ID and user ID are either null or empty");
+            return;
+        }
+
+        String data = prepareCommonRequestData() + res;
+        addRequestToQueue(data, false);
 
         tick();
     }
 
     /**
+     * Reports a crash with device data to the server.
+     *
+     * @throws IllegalStateException if context, app key, store, or server URL have not been set
+     */
+    public void sendCrashReport(@NonNull final String crashData, final boolean nonFatalCrash) {
+        if (!checkInternalState()) {
+            return;
+        }
+        L.d("[Connection Queue] sendCrashReport");
+
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.crashes)) {
+            L.d("[Connection Queue] request ignored, 'crashes' consent not given");
+            return;
+        }
+
+        final String data = prepareCommonRequestData()
+            + "&crash=" + UtilsNetworking.urlEncodeString(crashData);
+
+        //in case of a fatal crash, write it in sync to shared preferences
+        addRequestToQueue(data, !nonFatalCrash);
+
+        tick();
+    }
+
+    /**
+     * Send a direct request to server
+     * We have encoded each key and value as http url encoded.
+     * You need to check the required consents by yourself before this call, we are just checking that if any consent is given.
+     *
+     * @param requestData key value pair for direct request
+     */
+    public void sendDirectRequest(@NonNull final Map<String, String> requestData) {
+        if (!checkInternalState()) {
+            return;
+        }
+        L.d("[Connection Queue] sendDirectRequest");
+
+        if (!consentProvider.anyConsentGiven()) {
+            L.d("[Connection Queue] request ignored, no consent given");
+            return;
+        }
+
+        StringBuilder data = new StringBuilder(prepareCommonRequestData());
+
+        data.append("&dr=1");
+
+        for (Map.Entry<String, String> entry : requestData.entrySet()) {
+            if (data.length() > 0) {
+                data.append("&");
+            }
+            data.append(String.format("%s=%s",
+                UtilsNetworking.urlEncodeString(entry.getKey()),
+                UtilsNetworking.urlEncodeString(entry.getValue())
+            ));
+        }
+
+        addRequestToQueue(data.toString(), false);
+        tick();
+    }
+
+    /**
      * Records the specified events and sends them to the server.
+     *
      * @param events URL-encoded JSON string of event data
      * @throws IllegalStateException if context, app key, store, or server URL have not been set
      */
-    void recordEvents(final String events) {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] sendConsentChanges");
+    public void recordEvents(final String events) {
+        if (!checkInternalState()) {
+            return;
         }
+        L.d("[Connection Queue] sendConsentChanges");
 
         ////////////////////////////////////////////////////
         ///CONSENT FOR EVENTS IS CHECKED ON EVENT CREATION//
         ////////////////////////////////////////////////////
 
         final String data = prepareCommonRequestData()
-                          + "&events=" + events;
+            + "&events=" + events;
 
-        store_.addConnection(data);
+        addRequestToQueue(data, false);
         tick();
     }
 
-    void sendConsentChanges(String formattedConsentChanges) {
-        checkInternalState();
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] sendConsentChanges");
+    public void sendConsentChanges(String formattedConsentChanges) {
+        if (!checkInternalState()) {
+            return;
         }
+        L.d("[Connection Queue] sendConsentChanges");
 
         final String data = prepareCommonRequestData()
-                + "&consent=" + UtilsNetworking.urlEncodeString(formattedConsentChanges);
+            + "&consent=" + UtilsNetworking.urlEncodeString(formattedConsentChanges);
 
-        store_.addConnection(data);
+        addRequestToQueue(data, false);
 
         tick();
     }
 
-    void sendAPMCustomTrace(String key, Long durationMs, Long startMs, Long endMs) {
-        checkInternalState();
-
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] sendAPMCustomTrace");
+    public void sendAPMCustomTrace(String key, Long durationMs, Long startMs, Long endMs, String customMetrics) {
+        if (!checkInternalState()) {
+            return;
         }
 
-        if(!Countly.sharedInstance().anyConsentGiven()){
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Connection Queue] request ignored, consent not given");
-            }
+        L.d("[Connection Queue] sendAPMCustomTrace");
+
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.apm)) {
+            L.d("[Connection Queue] request ignored, 'apm' consent not given");
             return;
         }
 
         // https://abc.count.ly/i?app_key=xyz&device_id=pts911
-        // &apm={"type":"device","name":"forLoopProfiling_1","apm_metrics":{"duration": 10, “memory”: 200}, "stz": 1584698900, "etz": 1584699900}
+        // &apm={"type":"device","name":"forLoopProfiling_1","apm_metrics":{"duration": 10, "memory": 200}, "stz": 1584698900, "etz": 1584699900}
         // &timestamp=1584698900&count=1
 
-        String apmData = "{\"type\":\"device\",\"name\":\"" + key + "\", \"apm_metrics\":{\"duration\": " + durationMs + "}, \"stz\": " + startMs + ", \"etz\": " + endMs + "}";
+        String apmData = "{\"type\":\"device\",\"name\":\"" + key + "\", \"apm_metrics\":{\"duration\": " + durationMs + customMetrics + "}, \"stz\": " + startMs + ", \"etz\": " + endMs + "}";
 
         final String data = prepareCommonRequestData()
-                + "&count=1"
-                + "&apm=" + UtilsNetworking.urlEncodeString(apmData);
+            + "&count=1"
+            + "&apm=" + UtilsNetworking.urlEncodeString(apmData);
 
-        store_.addConnection(data);
+        addRequestToQueue(data, false);
 
         tick();
     }
 
-    void sendAPMNetworkTrace(String networkTraceKey, Long responseTimeMs, int responseCode, int requestPayloadSize, int responsePayloadSize, Long startMs, Long endMs) {
-        checkInternalState();
-
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] sendAPMNetworkTrace");
+    public void sendAPMNetworkTrace(String networkTraceKey, Long responseTimeMs, int responseCode, int requestPayloadSize, int responsePayloadSize, Long startMs, Long endMs) {
+        if (!checkInternalState()) {
+            return;
         }
 
-        if(!Countly.sharedInstance().anyConsentGiven()){
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Connection Queue] request ignored, consent not given");
-            }
+        L.d("[Connection Queue] sendAPMNetworkTrace");
+
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.apm)) {
+            L.d("[Connection Queue] request ignored, 'apm' consent not given");
             return;
         }
 
@@ -499,84 +617,236 @@ public class ConnectionQueue {
         String apmData = "{\"type\":\"network\",\"name\":\"" + networkTraceKey + "\", \"apm_metrics\":" + apmMetrics + ", \"stz\": " + startMs + ", \"etz\": " + endMs + "}";
 
         final String data = prepareCommonRequestData()
-                + "&count=1"
-                + "&apm=" + UtilsNetworking.urlEncodeString(apmData);
+            + "&count=1"
+            + "&apm=" + UtilsNetworking.urlEncodeString(apmData);
 
-        store_.addConnection(data);
+        addRequestToQueue(data, false);
 
         tick();
     }
 
-    private String prepareCommonRequestData(){
-        UtilsTime.Instant instant = UtilsTime.getCurrentInstant();
+    public void sendAPMAppStart(long durationMs, Long startMs, Long endMs) {
+        if (!checkInternalState()) {
+            return;
+        }
 
-        return "app_key=" + appKey_
-                + "&timestamp=" + instant.timestampMs
-                + "&hour=" + instant.hour
-                + "&dow=" + instant.dow
-                + "&tz=" + DeviceInfo.getTimezoneOffset()
-                + "&sdk_version=" + Countly.COUNTLY_SDK_VERSION_STRING
-                + "&sdk_name=" + Countly.COUNTLY_SDK_NAME;
+        L.d("[Connection Queue] sendAPMAppStart");
+
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.apm)) {
+            L.d("[Connection Queue] request ignored, 'apm' consent not given");
+            return;
+        }
+        //https://abc.count.ly/i?app_key=xyz&device_id=pts911&apm={"type":"device","name":"app_start","apm_metrics":{"duration": 15000}, "stz": 1584698900, "etz": 1584699900}
+        // &timestamp=1584698900&count=1
+
+        String apmData = "{\"type\":\"device\",\"name\":\"app_start\", \"apm_metrics\":{\"duration\": " + durationMs + "}, \"stz\": " + startMs + ", \"etz\": " + endMs + "}";
+
+        final String data = prepareCommonRequestData()
+            + "&count=1"
+            + "&apm=" + UtilsNetworking.urlEncodeString(apmData);
+
+        addRequestToQueue(data, false);
+
+        tick();
     }
 
-    private String prepareLocationData(CountlyStore cs, boolean canSendEmptyWithNoConsent){
+    public void sendAPMScreenTime(boolean recordForegroundTime, long durationMs, Long startMs, Long endMs) {
+        if (!checkInternalState()) {
+            return;
+        }
+
+        L.d("[Connection Queue] sendAPMScreenTime, recording foreground time: [" + recordForegroundTime + "]");
+
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.apm)) {
+            L.d("[Connection Queue] request ignored, 'apm' consent not given");
+            return;
+        }
+
+        final String eventName = recordForegroundTime ? "app_in_foreground" : "app_in_background";
+
+        String apmData = "{\"type\":\"device\",\"name\":\"" + eventName + "\", \"apm_metrics\":{\"duration\": " + durationMs + "}, \"stz\": " + startMs + ", \"etz\": " + endMs + "}";
+
+        final String data = prepareCommonRequestData()
+            + "&count=1"
+            + "&apm=" + UtilsNetworking.urlEncodeString(apmData);
+
+        addRequestToQueue(data, false);
+
+        tick();
+    }
+
+    @NonNull
+    String prepareCommonRequestData() {
+        return prepareCommonRequestData(deviceIdProvider_.getDeviceId());
+    }
+
+    @NonNull
+    String prepareCommonRequestData(@NonNull String deviceId) {
+        UtilsTime.Instant instant = UtilsTime.getCurrentInstant();
+
+        return prepareCommonRequestDataShort(instant, deviceId)
+            + "&hour=" + instant.hour
+            + "&dow=" + instant.dow
+            + "&tz=" + deviceInfo.mp.getTimezoneOffset();
+    }
+
+    @NonNull
+    String prepareCommonRequestDataShort() {
+        UtilsTime.Instant instant = UtilsTime.getCurrentInstant();
+        return prepareCommonRequestDataShort(instant);
+    }
+
+    @NonNull
+    String prepareCommonRequestDataShort(@NonNull UtilsTime.Instant instant) {
+        return prepareCommonRequestDataShort(instant, deviceIdProvider_.getDeviceId());
+    }
+
+    @NonNull
+    String prepareCommonRequestDataShort(@NonNull UtilsTime.Instant instant, @NonNull String deviceId) {
+        return "app_key=" + UtilsNetworking.urlEncodeString(baseInfoProvider.getAppKey())
+            + "&device_id=" + UtilsNetworking.urlEncodeString(deviceId)
+            + "&timestamp=" + instant.timestampMs
+            + "&sdk_version=" + Countly.sharedInstance().COUNTLY_SDK_VERSION_STRING
+            + "&sdk_name=" + Countly.sharedInstance().COUNTLY_SDK_NAME
+            + "&av=" + UtilsNetworking.urlEncodeString(deviceInfo.getAppVersionWithOverride(context_, metricOverride));
+    }
+
+    private String prepareLocationData(boolean locationDisabled, String locationCountryCode, String locationCity, String locationGpsCoordinates, String locationIpAddress) {
         String data = "";
 
-        if(canSendEmptyWithNoConsent && (cs.getLocationDisabled() || !Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.location))){
+        if (locationDisabled || !consentProvider.getConsent(Countly.CountlyFeatureNames.location)) {
             //if location is disabled or consent not given, send empty location info
             //this way it is cleared server side and geoip is not used
             //do this only if allowed
             data += "&location=";
         } else {
-            if(Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.location)) {
-                //location should be send, add all the fields we have
-                String location = cs.getLocation();
-                String city = cs.getLocationCity();
-                String country_code = cs.getLocationCountryCode();
-                String ip = cs.getLocationIpAddress();
+            //if we get here, location consent was given
+            //location should be sent, add all the fields we have
 
-                if(location != null && !location.isEmpty()){
-                    data += "&location=" + UtilsNetworking.urlEncodeString(location);
-                }
+            if (locationGpsCoordinates != null && !locationGpsCoordinates.isEmpty()) {
+                data += "&location=" + UtilsNetworking.urlEncodeString(locationGpsCoordinates);
+            }
 
-                if(city != null && !city.isEmpty()){
-                    data += "&city=" + city;
-                }
+            if (locationCity != null && !locationCity.isEmpty()) {
+                data += "&city=" + UtilsNetworking.urlEncodeString(locationCity);
+            }
 
-                if(country_code != null && !country_code.isEmpty()){
-                    data += "&country_code=" + country_code;
-                }
+            if (locationCountryCode != null && !locationCountryCode.isEmpty()) {
+                data += "&country_code=" + UtilsNetworking.urlEncodeString(locationCountryCode);
+            }
 
-                if(ip != null && !ip.isEmpty()){
-                    data += "&ip=" + ip;
-                }
+            if (locationIpAddress != null && !locationIpAddress.isEmpty()) {
+                data += "&ip=" + UtilsNetworking.urlEncodeString(locationIpAddress);
             }
         }
         return data;
     }
 
-    protected String prepareRemoteConfigRequest(String keysInclude, String keysExclude){
-        String data = prepareCommonRequestData()
-                + "&method=fetch_remote_config"
-                + "&device_id=" + UtilsNetworking.urlEncodeString(deviceId_.getId());
-
-        if(Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.sessions)) {
+    public String prepareRemoteConfigRequestLegacy(@Nullable String keysInclude, @Nullable String keysExclude, @NonNull String preparedMetrics) {
+        String data = prepareCommonRequestData() + "&method=fetch_remote_config";
+        if (consentProvider.getConsent(Countly.CountlyFeatureNames.sessions)) {
             //add session data if consent given
-            data += "&metrics=" + DeviceInfo.getMetrics(context_);
+            data += "&metrics=" + preparedMetrics;
         }
 
-        CountlyStore cs = getCountlyStore();
-        String locationData = prepareLocationData(cs, true);
-        data += locationData;
-
         //add key filters
-        if(keysInclude != null){
-            data += "&keys=" +  UtilsNetworking.urlEncodeString(keysInclude);
-        } else if(keysExclude != null) {
+        if (keysInclude != null) {
+            data += "&keys=" + UtilsNetworking.urlEncodeString(keysInclude);
+        } else if (keysExclude != null) {
             data += "&omit_keys=" + UtilsNetworking.urlEncodeString(keysExclude);
         }
 
         return data;
+    }
+
+    public String prepareRemoteConfigRequest(@Nullable String keysInclude, @Nullable String keysExclude, @NonNull String preparedMetrics, boolean autoEnroll) {
+        String data = prepareCommonRequestData() + "&method=rc";
+        if (consentProvider.getConsent(Countly.CountlyFeatureNames.sessions)) {
+            //add session data if consent given
+            data += "&metrics=" + preparedMetrics;
+        }
+
+        //add key filters
+        if (keysInclude != null) {
+            data += "&keys=" + UtilsNetworking.urlEncodeString(keysInclude);
+        } else if (keysExclude != null) {
+            data += "&omit_keys=" + UtilsNetworking.urlEncodeString(keysExclude);
+        }
+
+        // if auto enroll was enabled add oi=1 to the request
+        if (autoEnroll) {
+            data += "&oi=1";
+        }
+
+        return data;
+    }
+
+    /**
+     * To fetch all variants from the server. Something like this should be formed: method=ab_fetch_variants&app_key="APP_KEY"&device_id=DEVICE_ID
+     * API end point for this is /i/sdk (also o/sdk)
+     *
+     * @return
+     */
+    public String prepareFetchAllVariants() {
+        return prepareCommonRequestDataShort() + "&method=ab_fetch_variants";
+    }
+
+    /**
+     * To fetch all experiments from the server. Something like this should be formed: method=ab_fetch_experiments&app_key="APP_KEY"&device_id=DEVICE_ID
+     * Provides detailed experiment and variant information
+     * API end point for this is /o/sdk
+     *
+     * @return
+     */
+    public String prepareFetchAllExperiments() {
+        return prepareCommonRequestDataShort() + "&method=ab_fetch_experiments";
+    }
+
+    public String prepareEnrollVariant(String key, String variant) {
+        String data = prepareCommonRequestDataShort()
+            + "&method=ab_enroll_variant"
+            + "&key=" + UtilsNetworking.urlEncodeString(key)
+            + "&variant=" + UtilsNetworking.urlEncodeString(variant);
+
+        return data;
+    }
+
+    public String prepareRatingWidgetRequest(String widgetId) {
+        return prepareCommonRequestData() + "&widget_id=" + UtilsNetworking.urlEncodeString(widgetId);
+    }
+
+    public String prepareFeedbackListRequest() {
+        return prepareCommonRequestData() + "&method=feedback";
+    }
+
+    public String prepareHealthCheckRequest(String preparedMetrics) {
+        return prepareCommonRequestData() + "&metrics=" + preparedMetrics;
+    }
+
+    public String prepareFetchContents(int portraitWidth, int portraitHeight, int landscapeWidth, int landscapeHeight, String[] categories, String language) {
+
+        JSONObject json = new JSONObject();
+        try {
+            JSONObject landscapeJson = new JSONObject();
+            landscapeJson.put("w", landscapeWidth);
+            landscapeJson.put("h", landscapeHeight);
+
+            JSONObject portraitJson = new JSONObject();
+            portraitJson.put("w", portraitWidth);
+            portraitJson.put("h", portraitHeight);
+
+            json.put("l", landscapeJson);
+            json.put("p", portraitJson);
+        } catch (JSONException e) {
+            L.e("Error while preparing fetch contents request");
+        }
+
+        return prepareCommonRequestData() + "&method=queue" + "&category=" + Arrays.asList(categories) + "&resolution=" + UtilsNetworking.urlEncodeString(json.toString()) + "&la=" + language;
+    }
+
+    @Override
+    public String prepareServerConfigRequest() {
+        return prepareCommonRequestDataShort() + "&method=sc";
     }
 
     /**
@@ -584,6 +854,9 @@ public class ConnectionQueue {
      */
     void ensureExecutor() {
         if (executor_ == null) {
+            if (L != null) {
+                L.v("[ConnectionQueue] ensureExecutor, Creating new executor");
+            }
             executor_ = Executors.newSingleThreadExecutor();
         }
     }
@@ -593,24 +866,38 @@ public class ConnectionQueue {
      * process the local connection queue data.
      * Does nothing if there is connection queue data or if a ConnectionProcessor
      * is already running.
+     * <br>
+     * Should only be called if SDK is initialized
      */
-    void tick() {
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[Connection Queue] tick, [" + !store_.isEmptyConnections() + "] [" + (connectionProcessorFuture_ == null) + "] [" + (connectionProcessorFuture_ == null || connectionProcessorFuture_.isDone()) + "]");
+    public void tick() {
+        //todo enable later
+        //assert storageProvider != null;
+
+        boolean rqEmpty = isRequestQueueEmpty(); // this is a heavy operation, do it only once. Why heavy? reading storage
+        boolean cpDoneIfOngoing = connectionProcessorFuture_ != null && connectionProcessorFuture_.isDone();
+        L.v("[ConnectionQueue] tick, IsRQEmpty:[" + rqEmpty + "], HasOngoingProcess:[" + (connectionProcessorFuture_ == null) + "], OngoingProcess_Done:[" + cpDoneIfOngoing + "]");
+
+        if (!Countly.sharedInstance().isInitialized()) {
+            L.e("[ConnectionQueue] tick, SDK is not initialized");
+            //attempting to tick when the SDK is not initialized
+            return;
         }
 
-        if (!store_.isEmptyConnections() && (connectionProcessorFuture_ == null || connectionProcessorFuture_.isDone())) {
+        if (!rqEmpty && (connectionProcessorFuture_ == null || cpDoneIfOngoing)) {
+            L.d("[ConnectionQueue] tick, Starting ConnectionProcessor");
             ensureExecutor();
             connectionProcessorFuture_ = executor_.submit(createConnectionProcessor());
         }
     }
 
-    public ConnectionProcessor createConnectionProcessor(){
-        return new ConnectionProcessor(serverURL_, store_, deviceId_, sslContext_, requestHeaderCustomValues);
+    public ConnectionProcessor createConnectionProcessor() {
+        ConnectionProcessor cp = new ConnectionProcessor(baseInfoProvider.getServerURL(), storageProvider, deviceIdProvider_, configProvider, requestInfoProvider, sslContext_, requestHeaderCustomValues, L, healthTracker);
+        cp.pcc = pcc;
+        return cp;
     }
 
-    public boolean queueContainsTemporaryIdItems(){
-        String[] storedRequests = getCountlyStore().connections();
+    public boolean queueContainsTemporaryIdItems() {
+        String[] storedRequests = storageProvider.getRequests();
         String temporaryIdTag = "&device_id=" + DeviceId.temporaryCountlyDeviceId;
 
         for (String storedRequest : storedRequests) {
@@ -622,10 +909,32 @@ public class ConnectionQueue {
         return false;
     }
 
-    // for unit testing
-    ExecutorService getExecutor() { return executor_; }
-    void setExecutor(final ExecutorService executor) { executor_ = executor; }
-    Future<?> getConnectionProcessorFuture() { return connectionProcessorFuture_; }
-    void setConnectionProcessorFuture(final Future<?> connectionProcessorFuture) { connectionProcessorFuture_ = connectionProcessorFuture; }
+    void addRequestToQueue(final @NonNull String requestData, final boolean writeInSync) {
+        storageProvider.addRequest(requestData, writeInSync);
+    }
 
+    /**
+     * Returns true if no requests are current stored, false otherwise.
+     */
+    boolean isRequestQueueEmpty() {
+        String rawRequestQueue = storageProvider.getRequestQueueRaw();
+        return rawRequestQueue.isEmpty();
+    }
+
+    // for unit testing
+    ExecutorService getExecutor() {
+        return executor_;
+    }
+
+    void setExecutor(final ExecutorService executor) {
+        executor_ = executor;
+    }
+
+    Future<?> getConnectionProcessorFuture() {
+        return connectionProcessorFuture_;
+    }
+
+    void setConnectionProcessorFuture(final Future<?> connectionProcessorFuture) {
+        connectionProcessorFuture_ = connectionProcessorFuture;
+    }
 }

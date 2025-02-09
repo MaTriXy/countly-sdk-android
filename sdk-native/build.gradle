@@ -1,64 +1,49 @@
 apply plugin: 'com.android.library'
-apply plugin: 'bintray-release'
+apply plugin: "com.vanniktech.maven.publish"
 
 buildscript {
-    repositories {
-        jcenter()
-    }
-    dependencies {
-        classpath 'com.novoda:bintray-release:0.9.1'
-    }
+  repositories {
+    mavenCentral()
+  }
+  dependencies {
+    classpath 'com.vanniktech:gradle-maven-publish-plugin:0.21.0' //for publishing
+  }
 }
 
 android {
-    compileSdkVersion 28
+  compileSdkVersion 35
 
+  defaultConfig {
+    minSdk 21
+    targetSdkVersion 35
 
-    defaultConfig {
-        minSdkVersion 15
-        targetSdkVersion 28
-        versionCode 1
-        versionName "20.02"
+    testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+  }
 
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
+  buildTypes {
+    release {
+      minifyEnabled false
+      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
     }
-
-
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }
-
+  }
+  buildToolsVersion '33.0.0'
 }
 
 dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
+  implementation fileTree(dir: 'libs', include: ['*.jar'])
 
-    testImplementation 'junit:junit:4.12'
-    androidTestImplementation 'androidx.test:runner:1.2.0'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
+  //testImplementation 'junit:junit:4.13.2'
+  //androidTestImplementation 'androidx.test:runner:1.3.0'
+  //androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
 }
 
 task copyLibs(type: Copy) {
-    from "libs"
-    into "src/main/jniLibs"
+  from "libs"
+  into "src/main/jniLibs"
 }
 
 tasks.whenTaskAdded { task ->
-    if (task.name.startsWith('assemble')) {
-        task.dependsOn('copyLibs')
-    }
-}
-
-publish {
-    userOrg = 'countly'
-    groupId = 'ly.count.android'
-    artifactId = 'sdk-native'
-    publishVersion = '20.02'
-    desc = 'Countly Android Native Crash Support'
-    website = 'https://github.com/Countly/countly-sdk-android'
-    autoPublish = false
+  if (task.name.startsWith('assemble')) {
+    task.dependsOn('copyLibs')
+  }
 }

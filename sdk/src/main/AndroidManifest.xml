@@ -1,12 +1,24 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="ly.count.android.sdk">
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          package="ly.count.android.sdk">
 
-    <uses-permission android:name="android.permission.INTERNET"/>
+  <application>
+    <activity
+        android:name=".messaging.CountlyPushActivity"
+        android:excludeFromRecents="true"
+        android:noHistory="true"
+        android:taskAffinity=".CountlyPushActivity"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar"
+        android:exported="false"/>
+    <uses-library android:name="android.test.runner"/>
+    <activity android:name=".TransparentActivity"
+              android:configChanges="orientation|screenSize"
+              android:theme="@android:style/Theme.Translucent.NoTitleBar">
+    </activity>
+  </application>
 
-    <application>
-        <uses-library android:name="android.test.runner"/>
-    </application>
-
-    <!--<instrumentation android:name="ly.count.android.sdk.test.InstrumentationTestRunner"-->
-        <!--android:targetPackage="ly.count.android.sdk"/>-->
+  <permission
+      android:name="${applicationId}.CountlyPush.BROADCAST_PERMISSION"
+      android:protectionLevel="signature"/>
 
 </manifest>

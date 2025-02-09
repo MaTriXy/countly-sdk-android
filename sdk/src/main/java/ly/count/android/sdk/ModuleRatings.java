@@ -4,155 +4,147 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.os.AsyncTask;
-import android.util.Log;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.RatingBar;
-
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import java.util.HashMap;
+import java.util.Map;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URLConnection;
-import java.util.HashMap;
-import java.util.Map;
-
-class ModuleRatings extends ModuleBase {
-    static final String STAR_RATING_EVENT_KEY = "[CLY]_star_rating";
-
+public class ModuleRatings extends ModuleBase {
     //star rating
     StarRatingCallback starRatingCallback_;// saved callback that is used for automatic star rating
+    boolean showStarRatingDialogOnFirstActivity = false;
 
     final Ratings ratingsInterface;
 
     ModuleRatings(Countly cly, CountlyConfig config) {
-        super(cly);
-
-        if (_cly.isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[ModuleRatings] Initialising");
-        }
+        super(cly, config);
+        L.v("[ModuleRatings] Initialising");
 
         starRatingCallback_ = config.starRatingCallback;
-        setStarRatingInitConfig(config.countlyStore, config.starRatingSessionLimit, config.starRatingTextTitle, config.starRatingTextMessage, config.starRatingTextDismiss);
-        setIfRatingDialogIsCancellableInternal(config.countlyStore, config.starRatingDialogIsCancellable);
-        setShowDialogAutomatically(config.countlyStore, config.starRatingShownAutomatically);
-        setStarRatingDisableAskingForEachAppVersion(config.countlyStore, config.starRatingDisableAskingForEachAppVersion);
+        setStarRatingInitConfig(config.starRatingSessionLimit, config.starRatingTextTitle, config.starRatingTextMessage, config.starRatingTextDismiss);
+        setIfRatingDialogIsCancellableInternal(config.starRatingDialogIsCancellable);
+        setShowDialogAutomatically(config.starRatingShownAutomatically);
+        setStarRatingDisableAskingForEachAppVersion(config.starRatingDisableAskingForEachAppVersion);
 
         ratingsInterface = new Ratings();
     }
 
-    void recordManualRatingInternal(String widgetId, int rating, String email, String comment, boolean userCanBeContacted){
-        if (_cly.isLoggingEnabled()) {
-            Log.d(Countly.TAG, "[ModuleRatings] Calling recordManualRatingInternal");
-        }
+    void recordManualRatingInternal(String widgetId, int rating, String email, String comment, boolean userCanBeContacted) {
+        L.d("[ModuleRatings] Calling recordManualRatingInternal");
 
-        if(!Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.starRating)) {
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.starRating)) {
             return;
         }
 
-        if(widgetId == null){
-            if (_cly.isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[ModuleRatings] recordManualRatingInternal, provided widget ID is null, returning");
-            }
+        if (widgetId == null) {
+            L.e("[ModuleRatings] recordManualRatingInternal, provided widget ID is null, returning");
             return;
         }
 
-        if(widgetId.isEmpty()){
-            if (_cly.isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[ModuleRatings] recordManualRatingInternal, provided widget ID is empty, returning");
-            }
+        if (widgetId.isEmpty()) {
+            L.e("[ModuleRatings] recordManualRatingInternal, provided widget ID is empty, returning");
             return;
         }
 
-        if(rating < 0){
-            rating = 0;
+        if (rating < 1) {
+            rating = 1;
 
-            if (_cly.isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[ModuleRatings] recordManualRatingInternal, given rating too low, defaulting to 0");
-            }
+            L.d("[ModuleRatings] recordManualRatingInternal, given rating too low, defaulting to 1");
         }
 
-        if(rating > 5){
+        if (rating > 5) {
             rating = 5;
 
-            if (_cly.isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[ModuleRatings] recordManualRatingInternal, given rating too high, defaulting to 5");
-            }
+            L.d("[ModuleRatings] recordManualRatingInternal, given rating too high, defaulting to 5");
         }
+
+        String truncatedEmail = UtilsInternalLimits.truncateValueSize(email, _cly.config_.sdkInternalLimits.maxValueSize, L, "[ModuleRatings] recordManualRatingInternal");
+        String truncatedComment = UtilsInternalLimits.truncateValueSize(comment, _cly.config_.sdkInternalLimits.maxValueSize, L, "[ModuleRatings] recordManualRatingInternal");
 
         Map<String, Object> segm = new HashMap<>();
         segm.put("platform", "android");
-        segm.put("app_version", DeviceInfo.getAppVersion(_cly.context_));
+        segm.put("app_version", deviceInfo.mp.getAppVersion(_cly.context_));
         segm.put("rating", "" + rating);
         segm.put("widget_id", widgetId);
         segm.put("contactMe", userCanBeContacted);
 
-        if(email != null && !email.isEmpty()) {
-            segm.put("email", email);
+        if (truncatedEmail != null && !truncatedEmail.isEmpty()) {
+            segm.put("email", truncatedEmail);
         }
 
-        if(comment != null && !comment.isEmpty()) {
-            segm.put("comment", comment);
+        if (truncatedComment != null && !truncatedComment.isEmpty()) {
+            segm.put("comment", truncatedComment);
         }
 
-        _cly.moduleEvents.recordEventInternal(ModuleRatings.STAR_RATING_EVENT_KEY, segm, 1, 0, 0, null, true);
+        eventProvider.recordEventInternal(ModuleFeedback.RATING_EVENT_KEY, segm, 1, 0, 0, null, null);
     }
 
     /**
      * Save the star rating preferences object
+     *
      * @param srp
      */
-    private void saveStarRatingPreferences(final CountlyStore cs, final StarRatingPreferences srp) {
-        cs.setStarRatingPreferences(srp.toJSON().toString());
+    private void saveStarRatingPreferences(final StarRatingPreferences srp) {
+        storageProvider.setStarRatingPreferences(srp.toJSON().toString());
     }
 
     /**
      * Setting things that would be provided during initial config
+     *
      * @param limit limit for automatic rating
      * @param starRatingTextTitle provided title
      * @param starRatingTextMessage provided message
      * @param starRatingTextDismiss provided dismiss text
      */
-    void setStarRatingInitConfig(final CountlyStore cs, final int limit, final String starRatingTextTitle, final String starRatingTextMessage, final String starRatingTextDismiss) {
-        StarRatingPreferences srp = loadStarRatingPreferences(cs);
+    void setStarRatingInitConfig(final int limit, final String starRatingTextTitle, final String starRatingTextMessage, final String starRatingTextDismiss) {
+        StarRatingPreferences srp = loadStarRatingPreferences(storageProvider);
 
-        if(limit >= 0) {
+        if (limit >= 0) {
             srp.sessionLimit = limit;
         }
 
-        if(starRatingTextTitle != null) {
+        if (starRatingTextTitle != null) {
             srp.dialogTextTitle = starRatingTextTitle;
         }
 
-        if(starRatingTextMessage != null) {
+        if (starRatingTextMessage != null) {
             srp.dialogTextMessage = starRatingTextMessage;
         }
 
-        if(starRatingTextDismiss != null) {
+        if (starRatingTextDismiss != null) {
             srp.dialogTextDismiss = starRatingTextDismiss;
         }
 
-        saveStarRatingPreferences(cs, srp);
+        saveStarRatingPreferences(srp);
     }
 
     /**
      * Set if the star rating dialog should be shown automatically
+     *
      * @param shouldShow
      */
-    void setShowDialogAutomatically(final CountlyStore cs, final boolean shouldShow) {
-        StarRatingPreferences srp = loadStarRatingPreferences(cs);
+    void setShowDialogAutomatically(final boolean shouldShow) {
+        StarRatingPreferences srp = loadStarRatingPreferences(storageProvider);
         srp.automaticRatingShouldBeShown = shouldShow;
-        saveStarRatingPreferences(cs, srp);
+        saveStarRatingPreferences(srp);
     }
 
     boolean getIfStarRatingShouldBeShownAutomatically() {
-        StarRatingPreferences srp = loadStarRatingPreferences(_cly.eventQueue_.getCountlyStore());
+        StarRatingPreferences srp = loadStarRatingPreferences(_cly.countlyStore);
         return srp.automaticRatingShouldBeShown;
     }
 
@@ -160,76 +152,78 @@ class ModuleRatings extends ModuleBase {
      * Set if automatic star rating should be disabled for each new version.
      * By default automatic star rating will be shown for every new app version.
      * If this is set to true, star rating will be shown only once over apps lifetime
+     *
      * @param disableAsking if set true, will not show star rating for every new app version
      */
-    void setStarRatingDisableAskingForEachAppVersion(final CountlyStore cs, final boolean disableAsking) {
-        StarRatingPreferences srp = loadStarRatingPreferences(cs);
+    void setStarRatingDisableAskingForEachAppVersion(final boolean disableAsking) {
+        StarRatingPreferences srp = loadStarRatingPreferences(storageProvider);
         srp.disabledAutomaticForNewVersions = disableAsking;
-        saveStarRatingPreferences(cs, srp);
+        saveStarRatingPreferences(srp);
     }
 
     /**
      * Register that a apps session has transpired. Will increase session counter and show automatic star rating if needed.
+     *
      * @param context android context
      * @param starRatingCallback
      */
-    void registerAppSession(final Context context, final CountlyStore cs, final StarRatingCallback starRatingCallback) {
-        StarRatingPreferences srp = loadStarRatingPreferences(cs);
+    void registerAppSession(final Context context, final StarRatingCallback starRatingCallback) {
+        StarRatingPreferences srp = loadStarRatingPreferences(storageProvider);
 
-        String currentAppVersion = DeviceInfo.getAppVersion(context);
+        String currentAppVersion = deviceInfo.mp.getAppVersion(context);
 
         //a new app version is released, reset all counters
         //if we show the rating once per apps lifetime, don't reset the counters
-        if(currentAppVersion != null && !currentAppVersion.equals(srp.appVersion) && !srp.disabledAutomaticForNewVersions) {
+        if (currentAppVersion != null && !currentAppVersion.equals(srp.appVersion) && !srp.disabledAutomaticForNewVersions) {
             srp.appVersion = currentAppVersion;
             srp.isShownForCurrentVersion = false;
             srp.sessionAmount = 0;
         }
 
         srp.sessionAmount++;
-        if(srp.sessionAmount >= srp.sessionLimit && !srp.isShownForCurrentVersion && srp.automaticRatingShouldBeShown && !(srp.disabledAutomaticForNewVersions && srp.automaticHasBeenShown)) {
-            showStarRatingInternal(context, cs, starRatingCallback);
-            srp.isShownForCurrentVersion = true;
-            srp.automaticHasBeenShown = true;
+        if (srp.sessionAmount >= srp.sessionLimit && !srp.isShownForCurrentVersion && srp.automaticRatingShouldBeShown && !(srp.disabledAutomaticForNewVersions && srp.automaticHasBeenShown)) {
+            showStarRatingDialogOnFirstActivity = true;
         }
 
-        saveStarRatingPreferences(cs, srp);
+        saveStarRatingPreferences(srp);
     }
 
     /**
      * Returns the session limit set for automatic star rating
      */
-    static int getAutomaticStarRatingSessionLimitInternal(final CountlyStore cs){
-        StarRatingPreferences srp = loadStarRatingPreferences(cs);
+    static int getAutomaticStarRatingSessionLimitInternal(final StorageProvider sp) {
+        StarRatingPreferences srp = loadStarRatingPreferences(sp);
         return srp.sessionLimit;
     }
 
     /**
      * Returns how many sessions has star rating counted internally
+     *
      * @return
      */
-    int getCurrentVersionsSessionCountInternal(final CountlyStore cs){
-        StarRatingPreferences srp = loadStarRatingPreferences(cs);
+    int getCurrentVersionsSessionCountInternal(final StorageProvider sp) {
+        StarRatingPreferences srp = loadStarRatingPreferences(sp);
         return srp.sessionAmount;
     }
 
     /**
      * Set the automatic star rating session count back to 0
      */
-    void clearAutomaticStarRatingSessionCountInternal(final CountlyStore cs){
-        StarRatingPreferences srp = loadStarRatingPreferences(cs);
+    void clearAutomaticStarRatingSessionCountInternal() {
+        StarRatingPreferences srp = loadStarRatingPreferences(storageProvider);
         srp.sessionAmount = 0;
-        saveStarRatingPreferences(cs, srp);
+        saveStarRatingPreferences(srp);
     }
 
     /**
      * Set if the star rating dialog is cancellable
+     *
      * @param isCancellable
      */
-    void setIfRatingDialogIsCancellableInternal(final CountlyStore cs, final boolean isCancellable){
-        StarRatingPreferences srp = loadStarRatingPreferences(cs);
+    void setIfRatingDialogIsCancellableInternal(final boolean isCancellable) {
+        StarRatingPreferences srp = loadStarRatingPreferences(storageProvider);
         srp.isDialogCancellable = isCancellable;
-        saveStarRatingPreferences(cs, srp);
+        saveStarRatingPreferences(srp);
     }
 
     /**
@@ -262,6 +256,7 @@ class ModuleRatings extends ModuleBase {
 
         /**
          * Create a JSONObject from the current state
+         *
          * @return
          */
         JSONObject toJSON() {
@@ -279,12 +274,8 @@ class ModuleRatings extends ModuleBase {
                 json.put(KEY_DIALOG_TEXT_TITLE, dialogTextTitle);
                 json.put(KEY_DIALOG_TEXT_MESSAGE, dialogTextMessage);
                 json.put(KEY_DIALOG_TEXT_DISMISS, dialogTextDismiss);
-
-            }
-            catch (JSONException e) {
-                if (Countly.sharedInstance().isLoggingEnabled()) {
-                    Log.w(Countly.TAG, "Got exception converting an StarRatingPreferences to JSON", e);
-                }
+            } catch (JSONException e) {
+                Countly.sharedInstance().L.w("Got exception converting an StarRatingPreferences to JSON", e);
             }
 
             return json;
@@ -292,6 +283,7 @@ class ModuleRatings extends ModuleBase {
 
         /**
          * Load the preference state from a JSONObject
+         *
          * @param json
          * @return
          */
@@ -299,7 +291,7 @@ class ModuleRatings extends ModuleBase {
 
             StarRatingPreferences srp = new StarRatingPreferences();
 
-            if(json != null) {
+            if (json != null) {
                 try {
                     srp.appVersion = json.getString(KEY_APP_VERSION);
                     srp.sessionLimit = json.optInt(KEY_SESSION_LIMIT, 5);
@@ -310,22 +302,19 @@ class ModuleRatings extends ModuleBase {
                     srp.automaticHasBeenShown = json.optBoolean(KEY_AUTOMATIC_HAS_BEEN_SHOWN, false);
                     srp.isDialogCancellable = json.optBoolean(KEY_DIALOG_IS_CANCELLABLE, true);
 
-                    if(!json.isNull(KEY_DIALOG_TEXT_TITLE)) {
+                    if (!json.isNull(KEY_DIALOG_TEXT_TITLE)) {
                         srp.dialogTextTitle = json.getString(KEY_DIALOG_TEXT_TITLE);
                     }
 
-                    if(!json.isNull(KEY_DIALOG_TEXT_MESSAGE)) {
+                    if (!json.isNull(KEY_DIALOG_TEXT_MESSAGE)) {
                         srp.dialogTextMessage = json.getString(KEY_DIALOG_TEXT_MESSAGE);
                     }
 
-                    if(!json.isNull(KEY_DIALOG_TEXT_DISMISS)) {
+                    if (!json.isNull(KEY_DIALOG_TEXT_DISMISS)) {
                         srp.dialogTextDismiss = json.getString(KEY_DIALOG_TEXT_DISMISS);
                     }
-
                 } catch (JSONException e) {
-                    if (Countly.sharedInstance().isLoggingEnabled()) {
-                        Log.w(Countly.TAG, "Got exception converting JSON to a StarRatingPreferences", e);
-                    }
+                    Countly.sharedInstance().L.w("Got exception converting JSON to a StarRatingPreferences", e);
                 }
             }
 
@@ -335,23 +324,26 @@ class ModuleRatings extends ModuleBase {
 
     /**
      * Call to manually show star rating dialog
+     *
      * @param context android context
      * @param callback
      */
-    protected void showStarRatingInternal(final Context context, final CountlyStore cs, final StarRatingCallback callback){
-        StarRatingPreferences srp = loadStarRatingPreferences(cs);
+    void showStarRatingInternal(final Context context, final StarRatingCallback callback) {
+        StarRatingPreferences srp = loadStarRatingPreferences(storageProvider);
         showStarRatingCustom(context, srp.dialogTextTitle, srp.dialogTextMessage, srp.dialogTextDismiss, srp.isDialogCancellable, callback);
     }
 
     /**
      * Returns a object with the loaded preferences
+     * TODO make this non static
+     *
      * @return
      */
-    static StarRatingPreferences loadStarRatingPreferences(final CountlyStore cs) {
-        String srpString = cs.getStarRatingPreferences();
+    static StarRatingPreferences loadStarRatingPreferences(final StorageProvider sp) {
+        String srpString = sp.getStarRatingPreferences();
         StarRatingPreferences srp;
 
-        if(!srpString.equals("")) {
+        if (!srpString.equals("")) {
             JSONObject srJSON;
             try {
                 srJSON = new JSONObject(srpString);
@@ -368,6 +360,7 @@ class ModuleRatings extends ModuleBase {
 
     /**
      * Method that created the star rating dialog
+     *
      * @param context android context
      * @param title
      * @param message
@@ -375,48 +368,40 @@ class ModuleRatings extends ModuleBase {
      * @param isCancellable
      * @param callback
      */
-    public void showStarRatingCustom(
-            final Context context,
-            final String title,
-            final String message,
-            final String cancelText,
-            final boolean isCancellable,
-            final StarRatingCallback callback) {
+    void showStarRatingCustom(@NonNull final Context context, final String title, final String message, final String cancelText, final boolean isCancellable, @Nullable final StarRatingCallback callback) {
+        if (!(context instanceof Activity)) {
+            L.e("[ModuleRatings] Can't show star rating dialog, the provided context is not based off a activity");
 
-        if(!(context instanceof Activity)) {
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.e(Countly.TAG, "Can't show star rating dialog, the provided context is not based off a activity");
-            }
             return;
         }
 
-        LayoutInflater inflater = (LayoutInflater) context.getSystemService( Context.LAYOUT_INFLATER_SERVICE );
+        LayoutInflater inflater = (LayoutInflater) context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         View dialogLayout = inflater.inflate(R.layout.star_rating_layout, null);
         RatingBar ratingBar = dialogLayout.findViewById(R.id.ratingBar);
 
         final AlertDialog.Builder builder = new AlertDialog.Builder(context)
-                .setTitle(title)
-                .setMessage(message)
-                .setCancelable(isCancellable)
-                .setView(dialogLayout)
-                .setOnCancelListener(new DialogInterface.OnCancelListener() {
-                    @Override
-                    public void onCancel(DialogInterface dialogInterface) {
-                        if(callback != null) {
-                            //call the dismiss callback ir the user clicks the back button or clicks outside the dialog
-                            callback.onDismiss();
-                        }
+            .setTitle(title)
+            .setMessage(message)
+            .setCancelable(isCancellable)
+            .setView(dialogLayout)
+            .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                @Override
+                public void onCancel(DialogInterface dialogInterface) {
+                    if (callback != null) {
+                        //call the dismiss callback ir the user clicks the back button or clicks outside the dialog
+                        callback.onDismiss();
                     }
-                })
-                .setPositiveButton(cancelText, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialogInterface, int i) {
-                        if(callback != null) {
-                            //call the dismiss callback if the user clicks the "dismiss" button
-                            callback.onDismiss();
-                        }
+                }
+            })
+            .setPositiveButton(cancelText, new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialogInterface, int i) {
+                    if (callback != null) {
+                        //call the dismiss callback if the user clicks the "dismiss" button
+                        callback.onDismiss();
                     }
-                });
+                }
+            });
 
         final AlertDialog dialog = builder.show();
 
@@ -425,17 +410,17 @@ class ModuleRatings extends ModuleBase {
             public void onRatingChanged(RatingBar ratingBar, float v, boolean b) {
                 int rating = (int) v;
 
-                if(Countly.sharedInstance().getConsent(Countly.CountlyFeatureNames.starRating)) {
-                    Map<String, String> segm = new HashMap<>();
+                if (consentProvider.getConsent(Countly.CountlyFeatureNames.starRating)) {
+                    Map<String, Object> segm = new HashMap<>();
                     segm.put("platform", "android");
-                    segm.put("app_version", DeviceInfo.getAppVersion(context));
+                    segm.put("app_version", deviceInfo.mp.getAppVersion(context));
                     segm.put("rating", "" + rating);
 
-                    Countly.sharedInstance().recordEvent(ModuleRatings.STAR_RATING_EVENT_KEY, segm, 1);
+                    eventProvider.recordEventInternal(ModuleFeedback.RATING_EVENT_KEY, segm, 1, 0, 0, null, null);
                 }
 
                 dialog.dismiss();
-                if(callback != null) {
+                if (callback != null) {
                     callback.onRate(rating);
                 }
             }
@@ -444,116 +429,127 @@ class ModuleRatings extends ModuleBase {
 
     /// Countly webDialog user rating
 
-    /**
-     * Used for callback from async task
-     */
-    protected interface InternalFeedbackRatingCallback {
-        void callback(JSONObject checkResponse);
-    }
+    synchronized void showFeedbackPopupInternal(@Nullable final String widgetId, @Nullable final String closeButtonText, @Nullable final Activity activity, @Nullable final FeedbackRatingCallback devCallback) {
+        L.d("[ModuleRatings] Showing Feedback popup for widget id: [" + widgetId + "]");
 
-    protected static synchronized void showFeedbackPopupInternal(final String widgetId, final String closeButtonText, final Activity activity, final Countly countly, final ConnectionQueue connectionQueue_, final FeedbackRatingCallback devCallback){
-        if (Countly.sharedInstance().isLoggingEnabled()) {
-            Log.d(Countly.TAG, "Showing Feedback popup for widget id: [" + widgetId + "]");
-        }
-
-        if(widgetId == null || widgetId.isEmpty()){
-            if(devCallback != null){
+        if (widgetId == null || widgetId.isEmpty()) {
+            if (devCallback != null) {
                 devCallback.callback("Countly widgetId cannot be null or empty");
             }
-            throw new IllegalArgumentException("Countly widgetId cannot be null or empty");
+            L.e("[ModuleRatings] Countly widgetId cannot be null or empty");
+            return;
         }
 
-        if(countly.getConsent(Countly.CountlyFeatureNames.starRating)) {
-            //check the device type
-            final boolean deviceIsPhone;
-            final boolean deviceIsTablet;
-            final boolean deviceIsTv;
-
-            deviceIsTv = Utils.isDeviceTv(activity);
-
-            if(!deviceIsTv) {
-                deviceIsPhone = !Utils.isDeviceTablet(activity);
-                deviceIsTablet = Utils.isDeviceTablet(activity);
-            } else {
-                deviceIsTablet = false;
-                deviceIsPhone = false;
+        if (activity == null) {
+            if (devCallback != null) {
+                devCallback.callback("When showing feedback popup, Activity can't be null");
             }
+            L.e("[ModuleRatings] When showing feedback popup, Activity can't be null");
+            return;
+        }
 
-            ConnectionProcessor cp = connectionQueue_.createConnectionProcessor();
-            URLConnection urlConnection;
-            try {
-                urlConnection = cp.urlConnectionForServerRequest("app_key=" + connectionQueue_.getAppKey() + "&widget_id=" + widgetId, "/o/feedback/widget?");
-            } catch (IOException e) {
-                if (Countly.sharedInstance().isLoggingEnabled()) {
-                    Log.e(Countly.TAG, "IOException while checking for rating widget availability :[" + e.toString() + "]");
+        if (!consentProvider.getConsent(Countly.CountlyFeatureNames.starRating)) {
+            if (devCallback != null) {
+                devCallback.callback("Consent is not granted");
+            }
+            return;
+        }
+
+        //check the device type
+        final boolean deviceIsPhone;
+        final boolean deviceIsTablet;
+        final boolean deviceIsTv;
+
+        deviceIsTv = Utils.isDeviceTv(activity);
+
+        if (!deviceIsTv) {
+            deviceIsPhone = !Utils.isDeviceTablet(activity);
+            deviceIsTablet = Utils.isDeviceTablet(activity);
+        } else {
+            deviceIsTablet = false;
+            deviceIsPhone = false;
+        }
+
+        String requestData = requestQueueProvider.prepareRatingWidgetRequest(widgetId);
+        final String ratingWidgetUrl = baseInfoProvider.getServerURL() + "/feedback?widget_id=" + widgetId +
+            "&device_id=" + UtilsNetworking.urlEncodeString(deviceIdProvider.getDeviceId()) +
+            "&app_key=" + UtilsNetworking.urlEncodeString(baseInfoProvider.getAppKey());
+
+        L.d("[ModuleRatings] rating widget url :[" + ratingWidgetUrl + "]");
+
+        ConnectionProcessor cp = requestQueueProvider.createConnectionProcessor();
+        final boolean networkingIsEnabled = cp.configProvider_.getNetworkingEnabled();
+
+        (new ImmediateRequestMaker()).doWork(requestData, "/o/feedback/widget", cp, false, networkingIsEnabled, new ImmediateRequestMaker.InternalImmediateRequestCallback() {
+            @Override
+            public void callback(JSONObject checkResponse) {
+                if (checkResponse == null) {
+                    L.d("[ModuleRatings] Not possible to show Feedback popup for widget id: [" + widgetId + "], probably a lack of connection to the server");
+                    if (devCallback != null) {
+                        devCallback.callback("Not possible to show Rating popup, probably no internet connection or wrong widget id");
+                    }
+                    return;
                 }
 
-                if(devCallback != null){ devCallback.callback("Encountered problem while checking for rating widget availability"); }
-                return;
-            }
+                if (!checkResponse.has("target_devices")) {
+                    L.d("[ModuleRatings] Not possible to show Feedback popup for widget id: [" + widgetId + "], probably using a widget_id not intended for the rating widget");
+                    if (devCallback != null) {
+                        devCallback.callback("Not possible to show Rating popup, probably using a widget_id not intended for the rating widget");
+                    }
+                    return;
+                }
 
-            final String ratingWidgetUrl = connectionQueue_.getServerURL() + "/feedback?widget_id=" + widgetId + "&device_id=" + connectionQueue_.getDeviceId().getId() + "&app_key=" + connectionQueue_.getAppKey();
+                try {
+                    JSONObject jDevices = checkResponse.getJSONObject("target_devices");
 
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.d(Countly.TAG, "rating widget url :[" + ratingWidgetUrl + "]");
-            }
+                    boolean showOnTv = jDevices.optBoolean("desktop", false);
+                    boolean showOnPhone = jDevices.optBoolean("phone", false);
+                    boolean showOnTablet = jDevices.optBoolean("tablet", false);
 
-            (new ImmediateRequestMaker()).execute(urlConnection, false, new InternalFeedbackRatingCallback() {
-                @Override
-                public void callback(JSONObject checkResponse) {
-                    if(checkResponse == null){
-                        if (Countly.sharedInstance().isLoggingEnabled()) {
-                            Log.d(Countly.TAG, "Not possible to show Feedback popup for widget id: [" + widgetId + "], probably a lack of connection to the server");
-                        }
-                        if(devCallback != null){
-                            devCallback.callback("Not possible to show Rating popup, probably no internet connection");
-                        }
-                    } else {
-                        try {
-                            JSONObject jDevices = checkResponse.getJSONObject("target_devices");
+                    if ((deviceIsPhone && showOnPhone) || (deviceIsTablet && showOnTablet) || (deviceIsTv && showOnTv)) {
+                        //it's possible to show the rating window on this device
+                        L.d("[ModuleRatings] Showing Feedback popup for widget id: [" + widgetId + "]");
 
-                            boolean showOnTv = jDevices.optBoolean("desktop", false);
-                            boolean showOnPhone = jDevices.optBoolean("phone", false);
-                            boolean showOnTablet = jDevices.optBoolean("tablet", false);
-
-                            if((deviceIsPhone && showOnPhone) || (deviceIsTablet && showOnTablet) || (deviceIsTv && showOnTv)){
-                                //it's possible to show the rating window on this device
-                                if (Countly.sharedInstance().isLoggingEnabled()) {
-                                    Log.d(Countly.TAG, "Showing Feedback popup for widget id: [" + widgetId + "]");
-                                }
+                        Handler handler = new Handler(Looper.getMainLooper());
+                        handler.post(new Runnable() {
+                            public void run() {
+                                L.d("[ModuleRatings] Calling on main thread");
 
                                 RatingDialogWebView webView = new RatingDialogWebView(activity);
+                                webView.clearCache(true);
+                                webView.clearHistory();
+                                webView.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
                                 webView.getSettings().setJavaScriptEnabled(true);
                                 webView.loadUrl(ratingWidgetUrl);
 
                                 AlertDialog.Builder builder = new AlertDialog.Builder(activity);
                                 builder.setView(webView);
-                                if(closeButtonText != null && !closeButtonText.isEmpty()) {
-                                    builder.setNeutralButton(closeButtonText, null);
+                                if (closeButtonText != null && !closeButtonText.isEmpty()) {
+                                    builder.setNeutralButton(closeButtonText, new DialogInterface.OnClickListener() {
+                                        @Override public void onClick(DialogInterface dialog, int which) {
+                                            L.d("[ModuleRatings] Calling callback from 'close' button");
+                                            if (devCallback != null) {
+                                                devCallback.callback(null);
+                                            }
+                                        }
+                                    });
                                 }
                                 builder.show();
-                            } else {
-                                if(devCallback != null){
-                                    devCallback.callback("Rating dialog is not meant for this form factor");
-                                }
                             }
-
-                        } catch (JSONException e) {
-                            if (Countly.sharedInstance().isLoggingEnabled()) {
-                                e.printStackTrace();
-                            }
+                        });
+                    } else {
+                        if (devCallback != null) {
+                            devCallback.callback("Rating dialog is not meant for this form factor");
                         }
                     }
+                } catch (JSONException e) {
+                    L.e("[ModuleRatings] Encountered a issue while trying to parse the results of the widget config", e);
                 }
-            });
-        } else {
-            if(devCallback != null){
-                devCallback.callback("Consent is not granted");
             }
-        }
+        }, L);
     }
 
-    private static class RatingDialogWebView extends WebView {
+    static class RatingDialogWebView extends WebView {
         public RatingDialogWebView(Context context) {
             super(context);
         }
@@ -567,210 +563,176 @@ class ModuleRatings extends ModuleBase {
         }
     }
 
-    /**
-     * Async task for making immediate server requests
-     */
-    protected static class ImmediateRequestMaker extends AsyncTask<Object, Void, JSONObject> {
-        InternalFeedbackRatingCallback callback;
+    static class FeedbackDialogWebViewClient extends WebViewClient {
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            String url = request.getUrl().toString();
 
-        /**
-         * params fields:
-         * 0 - urlConnection
-         * 1 - requestShouldBeDelayed
-         * 2 - callback         *
-         */
-        protected JSONObject doInBackground(Object... params) {
-            if (Countly.sharedInstance().isLoggingEnabled()) {
-                Log.v(Countly.TAG, "Starting ImmediateRequestMaker request");
+            // Filter out outgoing calls
+            if (url.endsWith("cly_x_int=1")) {
+                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                view.getContext().startActivity(intent);
+                return true;
             }
-            callback = (InternalFeedbackRatingCallback)params[2];
-            boolean requestShouldBeDelayed = (boolean)params[1];
+            return false;
+        }
 
-            HttpURLConnection connection = null;
-            BufferedReader reader = null;
-            boolean wasSuccess = true;
-
-            try {
-                if(requestShouldBeDelayed){
-                    //used in cases after something has to be done after a device id change
-                    if (Countly.sharedInstance().isLoggingEnabled()) {
-                        Log.v(Countly.TAG, "ImmediateRequestMaker request should be delayed, waiting for 10.5 seconds");
-                    }
-
-                    try {
-                        Thread.sleep(10500);
-                    } catch (InterruptedException e) {
-                        if (Countly.sharedInstance().isLoggingEnabled()) {
-                            Log.w(Countly.TAG, "While waiting for 10 seconds in ImmediateRequestMaker, sleep was interrupted");
-                        }
-                    }
-                }
-
-                connection = (HttpURLConnection)params[0];
-                connection.connect();
-
-                InputStream stream;
-
-                try{
-                    //assume there will be no error
-                    stream = connection.getInputStream();
-                } catch (Exception ex){
-                    //in case of exception, assume there was a error in the request
-                    //and change streams
-                    stream = connection.getErrorStream();
-                    wasSuccess = false;
-                }
-
-                if(stream == null){
-                    if (Countly.sharedInstance().isLoggingEnabled()) {
-                        Log.e(Countly.TAG, "Encountered problem while making a immediate server request, received stream was null");
-                    }
-                    return null;
-                }
-
-                reader = new BufferedReader(new InputStreamReader(stream));
-
-                StringBuilder buffer = new StringBuilder();
-                String line = "";
-
-                while ((line = reader.readLine()) != null) {
-                    buffer.append(line).append("\n");
-                }
-
-                if(wasSuccess) {
-                    return new JSONObject(buffer.toString());
-                } else {
-                    if (Countly.sharedInstance().isLoggingEnabled()) {
-                        Log.e(Countly.TAG, "Encountered problem while making a immediate server request, :[" + buffer.toString() + "]");
-                    }
-                    return null;
-                }
-            } catch (Exception e) {
-                if (Countly.sharedInstance().isLoggingEnabled()) {
-                    Log.e(Countly.TAG, "Received exception while making a immediate server request");
-                    e.printStackTrace();
-                }
-            } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
-                try {
-                    if (reader != null) {
-                        reader.close();
-                    }
-                } catch (IOException e) {
-                    if (Countly.sharedInstance().isLoggingEnabled()) {
-                        e.printStackTrace();
-                    }
-                }
-            }
+        @Override
+        public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
+            // Countly.sharedInstance().L.i("attempting to load resource: " + url);
             return null;
         }
 
         @Override
-        protected void onPostExecute(JSONObject result) {
-            super.onPostExecute(result);
-            //Log.d(TAG, "Post exec: [" + result + "]");
-
-            if(callback != null){
-                callback.callback(result);
-            }
+        public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+            // Countly.sharedInstance().L.i("attempting to load resource: " + request.getUrl());
+            return null;
         }
     }
 
     @Override
-    void halt(){
+    void callbackOnActivityResumed(Activity activity) {
+        if (showStarRatingDialogOnFirstActivity) {
+            StarRatingPreferences srp = loadStarRatingPreferences(storageProvider);
+            srp.isShownForCurrentVersion = true;
+            srp.automaticHasBeenShown = true;
+
+            showStarRatingInternal(activity, starRatingCallback_);
+
+            saveStarRatingPreferences(srp);
+            showStarRatingDialogOnFirstActivity = false;
+        }
+    }
+
+    @Override
+    void initFinished(@NonNull CountlyConfig config) {
+        //do star rating related things
+        if (consentProvider.getConsent(Countly.CountlyFeatureNames.starRating)) {
+            registerAppSession(config.context, starRatingCallback_);
+        }
+    }
+
+    @Override
+    void halt() {
 
     }
 
     public class Ratings {
+        /**
+         * Record user rating widget manually without showing any message dialog.
+         *
+         * @param widgetId widget ID to which this rating will be tied. You get it from the dashboard
+         * @param rating value from 1 to 5 that will be set as the rating value
+         * @param email email of the user
+         * @param comment comment set by the user
+         * @param userCanBeContacted set true if the user wants you to contact him
+         * @deprecated use 'recordRatingWidgetWithID' in place of this call
+         */
+        public void recordManualRating(String widgetId, int rating, String email, String comment, boolean userCanBeContacted) {
+            L.i("[Ratings] Calling recordManualRating");
+            recordRatingWidgetWithID(widgetId, rating, email, comment, userCanBeContacted);
+        }
 
         /**
-         * Record user rating manually without showing any message dialog.
+         * Record user rating widget manually without showing any message dialog.
+         *
          * @param widgetId widget ID to which this rating will be tied. You get it from the dashboard
-         * @param rating value from 0 to 5 that will be set as the rating value
+         * @param rating value from 1 to 5 that will be set as the rating value
          * @param email email of the user
          * @param comment comment set by the user
          * @param userCanBeContacted set true if the user wants you to contact him
          */
-        public synchronized void recordManualRating(String widgetId, int rating, String email, String comment, boolean userCanBeContacted){
-            if (_cly.isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Ratings] Calling recordManualRating");
-            }
+        public void recordRatingWidgetWithID(String widgetId, int rating, String email, String comment, boolean userCanBeContacted) {
+            synchronized (_cly) {
+                L.i("[Ratings] Calling recordRatingWidgetWithID");
 
-            if(widgetId == null || widgetId.isEmpty()){
-                throw new IllegalStateException("A valid widgetID must be provided. The current one is either null or empty");
-            }
+                if (widgetId == null || widgetId.isEmpty()) {
+                    throw new IllegalStateException("A valid widgetID must be provided. The current one is either null or empty");
+                }
 
-            recordManualRatingInternal(widgetId, rating, email, comment, userCanBeContacted);
+                recordManualRatingInternal(widgetId, rating, email, comment, userCanBeContacted);
+            }
         }
 
         /**
          * Show the rating dialog to the user
+         *
          * @param widgetId ID that identifies this dialog
-         * @return
+         * @deprecated use 'presentRatingWidgetWithID' in place of this call
          */
-        synchronized void showFeedbackPopup(final String widgetId, final String closeButtonText, final Activity activity, final FeedbackRatingCallback callback){
-            if (_cly.isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Ratings] Calling showFeedbackPopup");
-            }
+        public void showFeedbackPopup(final String widgetId, final String closeButtonText, final Activity activity, final FeedbackRatingCallback callback) {
+            L.i("[Ratings] Calling showFeedbackPopup");
+            presentRatingWidgetWithID(widgetId, closeButtonText, activity, callback);
+        }
 
-            showFeedbackPopupInternal(widgetId, closeButtonText, activity, _cly, _cly.connectionQueue_, callback);
+        /**
+         * Show the rating widget dialog to the user
+         *
+         * @param widgetId ID that identifies this dialog
+         */
+        public void presentRatingWidgetWithID(final String widgetId, final String closeButtonText, final Activity activity, final FeedbackRatingCallback callback) {
+            synchronized (_cly) {
+                L.i("[Ratings] Calling presentRatingWidgetWithID");
+
+                showFeedbackPopupInternal(widgetId, closeButtonText, activity, callback);
+            }
         }
 
         /**
          * Shows the star rating dialog
+         *
          * @param activity the activity that will own the dialog
          * @param callback callback for the star rating dialog "rate" and "dismiss" events
          */
-        public synchronized void showStarRating(Activity activity, StarRatingCallback callback){
-            if (_cly.isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Ratings] Calling showStarRating");
-            }
+        public void showStarRating(Activity activity, StarRatingCallback callback) {
+            synchronized (_cly) {
+                L.i("[Ratings] Calling showStarRating");
 
-            if(!_cly.getConsent(Countly.CountlyFeatureNames.starRating)) {
-                return;
-            }
+                if (!consentProvider.getConsent(Countly.CountlyFeatureNames.starRating)) {
+                    return;
+                }
 
-            showStarRatingInternal(activity, _cly.connectionQueue_.getCountlyStore(), callback);
+                showStarRatingInternal(activity, callback);
+            }
         }
 
         /**
          * Returns how many sessions has star rating counted internally for the current apps version
+         *
          * @return
          */
-        public synchronized int getCurrentVersionsSessionCount() {
-            int sessionCount = getCurrentVersionsSessionCountInternal(_cly.connectionQueue_.getCountlyStore());
+        public int getCurrentVersionsSessionCount() {
+            synchronized (_cly) {
+                int sessionCount = getCurrentVersionsSessionCountInternal(_cly.countlyStore);
 
-            if (_cly.isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Ratings] Getting star rating current version session count: [" + sessionCount + "]");
+                L.i("[Ratings] Getting star rating current version session count: [" + sessionCount + "]");
+
+                return sessionCount;
             }
-
-            return sessionCount;
         }
 
         /**
          * Set the automatic star rating session count back to 0
          */
-        public synchronized void clearAutomaticStarRatingSessionCount() {
-            if (_cly.isLoggingEnabled()) {
-                Log.d(Countly.TAG, "[Ratings] Clearing star rating session count");
-            }
+        public void clearAutomaticStarRatingSessionCount() {
+            synchronized (_cly) {
+                L.i("[Ratings] Clearing star rating session count");
 
-            clearAutomaticStarRatingSessionCountInternal(_cly.connectionQueue_.getCountlyStore());
+                clearAutomaticStarRatingSessionCountInternal();
+            }
         }
 
         /**
          * Returns the session limit set for automatic star rating
          */
         public int getAutomaticStarRatingSessionLimit() {
-            int sessionLimit = ModuleRatings.getAutomaticStarRatingSessionLimitInternal(_cly.connectionQueue_.getCountlyStore());
+            synchronized (_cly) {
+                int sessionLimit = ModuleRatings.getAutomaticStarRatingSessionLimitInternal(_cly.countlyStore);
 
-            if (_cly.isLoggingEnabled()) {
-                Log.d(Countly.TAG, "Getting automatic star rating session limit: [" + sessionLimit + "]");
+                L.i("[Ratings] Getting automatic star rating session limit: [" + sessionLimit + "]");
+
+                return sessionLimit;
             }
-
-            return sessionLimit;
         }
     }
 }

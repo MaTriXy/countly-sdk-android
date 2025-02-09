@@ -16,11 +16,18 @@
 #   public *;
 #}
 
--keep class org.openudid.** { *; }
-
+# This renames the file name on stack traces from "UnknownSource" to "SourceFile"
 -renamesourcefileattribute SourceFile
+# This values are kept on stack traces to debug any issue easily
 -keepattributes SourceFile,LineNumberTable
 
-# Rules to keep the FCM dependency optional
--dontwarn com.google.firebase.messaging.RemoteMessage
--keep class com.google.firebase.messaging.RemoteMessage
+# Rules recommended for Huawei PushKit
+-ignorewarnings
+-keepattributes *Annotation*
+-keepattributes Exceptions
+-keepattributes InnerClasses
+-keepattributes Signature
+-keepattributes SourceFile,LineNumberTable
+-keep class com.hianalytics.android.**{*;}
+-keep class com.huawei.updatesdk.**{*;}
+-keep class com.huawei.hms.**{*;}

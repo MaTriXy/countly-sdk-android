@@ -1,52 +1,124 @@
 apply plugin: 'com.android.application'
 
-repositories {
-    maven {
-        url  "http://dl.bintray.com/countly/maven"
+//required for huawei push
+//apply plugin: 'com.huawei.agconnect'
+
+apply plugin: 'kotlin-android'
+
+/*
+//for automatic symbol upload
+apply plugin: ly.count.android.plugins.UploadSymbolsPlugin
+
+buildscript {
+    repositories {
+        mavenCentral()
     }
+    dependencies {
+        classpath group: 'ly.count.android', 'name': 'sdk-plugin', 'version': '20.11.8'
+    }
+}
+*/
+
+repositories {
+  mavenCentral()
+
+  //required for huawei push
+  maven {
+    url "https://developer.huawei.com/repo/"
+  }
 }
 
 android {
-    compileSdkVersion 28
+  compileSdk 35
+  namespace 'ly.count.android.demo'
 
-    defaultConfig {
-        applicationId "ly.count.android.demo"
-        minSdkVersion 16
-        targetSdkVersion 28
-        versionCode 1
-        versionName "1.0"
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+  signingConfigs {
+    release {
+      storeFile file('keys')
+      keyAlias 'HWDemo'
+      keyPassword 'countly'
+      storePassword 'countly'
+      v1SigningEnabled true
+      v2SigningEnabled true
     }
-    buildTypes {
-        debug {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-        release {
-            minifyEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
+  }
+
+  defaultConfig {
+    applicationId "ly.count.android.demo"
+    minSdk 21
+    targetSdk 35
+    versionCode 1
+    versionName "1.0"
+    testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+  }
+  buildTypes {
+    debug {
+      signingConfig signingConfigs.release
+      minifyEnabled false
+      shrinkResources false
+      proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
     }
-    lintOptions {
-        abortOnError false
+    release {
+      signingConfig signingConfigs.release
+      minifyEnabled true
+      shrinkResources true
+      proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
     }
+  }
+  lintOptions {
+    abortOnError false
+  }
+
+  //required to get rid of this error "Invoke-customs are only supported starting with Android O (--min-api 26)"
+  //    compileOptions {
+  //        sourceCompatibility JavaVersion.VERSION_1_8
+  //        targetCompatibility JavaVersion.VERSION_1_8
+  //    }
+
+  /*
+  //for automatic symbol upload
+  afterEvaluate {
+      assembleRelease.finalizedBy(uploadJavaSymbols)
+  }
+   */
 }
 
 dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation project(':sdk')
+  implementation fileTree(dir: 'libs', include: ['*.jar'])
+  implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
 
-    implementation 'com.google.firebase:firebase-messaging:18.0.0'
-    implementation 'com.google.android.material:material:1.2.0-alpha01'
-    implementation 'androidx.appcompat:appcompat:1.1.0'
-    implementation 'androidx.constraintlayout:constraintlayout:1.1.3'
-    implementation 'androidx.annotation:annotation:1.1.0'
-    testImplementation 'junit:junit:4.12'
-    androidTestImplementation 'androidx.test:runner:1.2.0'
-    androidTestImplementation 'androidx.test:core:1.2.0'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.1'
-    androidTestImplementation  'androidx.test.espresso:espresso-core:3.2.0'
-    //implementation 'ly.count.android:sdk:19.02.3'
+  implementation project(':sdk')
+  //implementation 'ly.count.android:sdk:21.11.0'
+  //implementation 'ly.count.android:sdk-plugin:21.11.0'
+
+  //required for FCM push
+  implementation 'com.google.firebase:firebase-messaging:24.0.0'
+  //required for huawei push
+  implementation 'com.huawei.hms:push:6.3.0.304'
+
+  implementation 'com.google.android.material:material:1.12.0'
+  implementation 'androidx.appcompat:appcompat:1.6.1'
+  implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+  implementation 'androidx.annotation:annotation:1.8.0'
+  implementation 'androidx.core:core-ktx:1.13.1'
+
+  //required for the install referrer
+  implementation 'com.android.installreferrer:installreferrer:2.2'
+
+  //for testing
+  testImplementation 'junit:junit:4.13.2'
+  //    androidTestImplementation 'androidx.test:runner:1.3.0'
+  //    androidTestImplementation 'androidx.test:core:1.3.0'
+  androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+  //    androidTestImplementation 'androidx.test.espresso:espresso-core:3.3.0'
 }
+
+/*
+//for automatic symbol upload
+countly {
+    server "https://YOUR_SERVER",
+    app_key "YOUR_APP_KEY"
+}
+*/
 
 apply plugin: 'com.google.gms.google-services'

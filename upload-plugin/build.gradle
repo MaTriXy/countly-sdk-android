@@ -1,50 +1,34 @@
 buildscript {
-    repositories {
-        jcenter()
-    }
-    dependencies {
-        classpath 'com.novoda:bintray-release:0.9.1'
-    }
+  repositories {
+    mavenCentral()
+  }
+  dependencies {
+    classpath 'com.vanniktech:gradle-maven-publish-plugin:0.21.0' //for publishing
+  }
 }
 
 plugins {
-    id 'java-gradle-plugin'
-    id 'groovy'
+  id 'java-gradle-plugin'
+  id 'groovy'
 }
 
-apply plugin: 'bintray-release'
-
-
 gradlePlugin {
-    plugins {
-        uploadSymbolPlugin {
-            id = 'ly.count.android.plugins.upload-symbols'
-            implementationClass = 'ly.count.android.plugins.UploadSymbolsPlugin'
-        }
+  plugins {
+    uploadSymbolPlugin {
+      id = 'ly.count.android.plugins.upload-symbols'
+      implementationClass = 'ly.count.android.plugins.UploadSymbolsPlugin'
     }
+  }
 }
 
 repositories {
-    mavenCentral()
+  mavenCentral()
 }
 
 dependencies {
-    compile gradleApi()
-    compile localGroovy()
-    // implementation 'com.squareup.okhttp3:okhttp:3.14.1'
-    compile 'com.squareup.okhttp3:okhttp:3.14.1'
-    // classpath 'com.squareup.okhttp3:okhttp:3.14.1'
-    // classpath group: 'com.squareup.okhttp3', name: 'okhttp', version: '3.14.1'
+  implementation gradleApi()
+  implementation localGroovy()
+  implementation 'com.squareup.okhttp3:okhttp:3.14.9'
 }
 
-
-
-publish {
-    userOrg = 'countly'
-    groupId = 'ly.count.android'
-    artifactId = 'sdk-plugin'
-    publishVersion = '20.02'
-    desc = 'Gradle plugin for automatic upload of symbol files'
-    website = 'https://github.com/Countly/countly-sdk-android'
-    autoPublish = false
-}
+apply plugin: "com.vanniktech.maven.publish"

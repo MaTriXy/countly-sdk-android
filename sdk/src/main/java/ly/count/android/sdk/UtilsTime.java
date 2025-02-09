@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 
 public class UtilsTime {
+    protected static int ONE_SECOND_IN_MS = 1000;
 
     public static class Instant {
         public final long timestampMs;
@@ -13,13 +14,20 @@ public class UtilsTime {
         public final int dow; //0-Sunday, 1-Monday, 2-Tuesday, 3-Wednesday, 4-Thursday, 5-Friday, 6-Saturday
 
         protected Instant(long timestampInMillis, int hour, int dow) {
+            assert timestampInMillis >= 0L;
+            assert hour >= 0 && hour <= 23;
+            assert dow >= 0 && dow <= 6;
+
             this.timestampMs = timestampInMillis;
             this.hour = hour;
             this.dow = dow;
         }
 
         public static Instant get(long timestampInMillis) {
+            assert timestampInMillis >= 0L;
+
             if (timestampInMillis < 0L) {
+                //todo remove exception
                 throw new IllegalArgumentException("timestampInMillis must be greater than or equal to zero");
             }
             Calendar calendar = Calendar.getInstance();
@@ -33,26 +41,32 @@ public class UtilsTime {
 
     /**
      * Get's a instant for the current moment
+     *
      * @return
      */
-    public static synchronized Instant getCurrentInstant(){
+    public static synchronized Instant getCurrentInstant() {
         long timestamp = currentTimestampMs();
         return Instant.get(timestamp);
     }
 
     /**
      * Get current timestamp in milliseconds
+     *
      * @return
      */
     public static synchronized long currentTimestampMs() {
         return timeGenerator.uniqueTimestamp();
     }
 
+    public static synchronized long getNanoTime() {
+        return System.nanoTime();
+    }
+
     /**
      * Utility method to return a current timestamp in seconds.
      */
     public static int currentTimestampSeconds() {
-        return ((int)(System.currentTimeMillis() / 1000L));
+        return (int) (System.currentTimeMillis() / 1000L);
     }
 
     private static class TimeUniquesEnsurer {
@@ -86,7 +100,6 @@ public class UtilsTime {
             return ms;
         }
     }
+
     private static final TimeUniquesEnsurer timeGenerator = new TimeUniquesEnsurer();
-
-
 }
